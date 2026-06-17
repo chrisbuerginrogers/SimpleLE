@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from lelib import controller, doubleMotor, colorSensor
 
-SERIAL = 1133
+SERIAL = 1128
 HISTORY = 200  # number of samples shown in the window
 
 dm   = doubleMotor()
