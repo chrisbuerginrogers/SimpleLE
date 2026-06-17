@@ -72,6 +72,7 @@ Reads color data from a LEGO color sensor. Extends `legoeducation.ColorSensor`.
 | Method | Parameters | Returns | Description |
 |---|---|---|---|
 | `connect(card_color, card_serial)` | `card_color` – color of the Bluetooth card; `card_serial` – serial number of the card | — | Connects to the sensor with up to 5 retries. |
+| `reflection()` | — | `int/float` | Returns the raw reflection value from the sensor (0–255). |
 | `detect_color()` | — | `str` | Returns the name of the detected color (see table below). |
 
 ### Color mapping
