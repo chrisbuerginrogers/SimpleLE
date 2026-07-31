@@ -36,17 +36,22 @@ motor.stop()
 
 ## API
 
-See [lelib.md](lelib.md) for the full API reference.
+See [lelib.md](lelib.md) for the lelib API reference, or `docs/` for a full per-class reference covering every method (including the underlying `legoeducation` calls lelib doesn't rename) with an example each:
+
+- [docs/singleMotor.md](docs/singleMotor.md)
+- [docs/doubleMotor.md](docs/doubleMotor.md)
+- [docs/controller.md](docs/controller.md)
+- [docs/colorSensor.md](docs/colorSensor.md)
 
 ## Example: joystick-controlled drive with live color graph
 
-`drive.py` connects a double motor, controller, and color sensor to the same Bluetooth card, then:
+`projects/drive.py` connects a double motor, controller, and color sensor to the same Bluetooth card, then:
 
 - Runs a background thread that tank-drives the motors from joystick input and samples the color sensor at 20 Hz
 - Opens a live `matplotlib` plot of the reflection value
 
 ```bash
-python drive.py
+python projects/drive.py
 ```
 
 Edit the `SERIAL` constant at the top of the file to match your Bluetooth card.

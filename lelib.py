@@ -25,8 +25,31 @@ class singleMotor(le.SingleMotor):
                     raise
         if not self.connected:
             raise ConnectionError('Error connecting to Single Motor.')
-            
-        
+
+    def set_update_rate(self, delay_ms=100):
+        '''
+        Set how often (in milliseconds) the hardware sends automatic
+        sensor/button updates over Bluetooth. Must be 0 (off) or between
+        15 and 1000.
+        '''
+        self.device_notification_request(delay_ms)
+
+    def on_button_press(self, callback):
+        '''
+        Register a function to be called each time the button is pressed.
+        callback() is called with no arguments.
+        '''
+        was_pressed = self.button.state == le.BUTTON_STATE_PRESSED
+
+        def _handle_notification(notification):
+            nonlocal was_pressed
+            pressed = self.button.state == le.BUTTON_STATE_PRESSED
+            if pressed and not was_pressed:
+                callback()
+            was_pressed = pressed
+
+        self.set_notification_callback(_handle_notification)
+
     def spin(self, rotations=1):
         self.motor_run_for_degrees(rotations * 360)
 
@@ -54,7 +77,31 @@ class doubleMotor(le.DoubleMotor):
                     raise
         if not self.connected:
             raise ConnectionError('Error connecting to Double Motor.')
-       
+
+    def set_update_rate(self, delay_ms=100):
+        '''
+        Set how often (in milliseconds) the hardware sends automatic
+        sensor/button updates over Bluetooth. Must be 0 (off) or between
+        15 and 1000.
+        '''
+        self.device_notification_request(delay_ms)
+
+    def on_button_press(self, callback):
+        '''
+        Register a function to be called each time the button is pressed.
+        callback() is called with no arguments.
+        '''
+        was_pressed = self.button.state == le.BUTTON_STATE_PRESSED
+
+        def _handle_notification(notification):
+            nonlocal was_pressed
+            pressed = self.button.state == le.BUTTON_STATE_PRESSED
+            if pressed and not was_pressed:
+                callback()
+            was_pressed = pressed
+
+        self.set_notification_callback(_handle_notification)
+
     def move_steps(self, step=1):
         '''
         Move both motors at once for given number of steps. 
@@ -134,6 +181,30 @@ class controller(le.Controller):
         if not self.connected:
             raise ConnectionError('Error connecting to Controller.')
 
+    def set_update_rate(self, delay_ms=100):
+        '''
+        Set how often (in milliseconds) the hardware sends automatic
+        sensor/button updates over Bluetooth. Must be 0 (off) or between
+        15 and 1000.
+        '''
+        self.device_notification_request(delay_ms)
+
+    def on_button_press(self, callback):
+        '''
+        Register a function to be called each time the button is pressed.
+        callback() is called with no arguments.
+        '''
+        was_pressed = self.button.state == le.BUTTON_STATE_PRESSED
+
+        def _handle_notification(notification):
+            nonlocal was_pressed
+            pressed = self.button.state == le.BUTTON_STATE_PRESSED
+            if pressed and not was_pressed:
+                callback()
+            was_pressed = pressed
+
+        self.set_notification_callback(_handle_notification)
+
     def left_up(self):
         return self.sensor.leftPercent > 0
     
@@ -181,6 +252,30 @@ class colorSensor(le.ColorSensor):
                     raise
         if not self.connected:
             raise ConnectionError('Error connecting to Color Sensor.')
+
+    def set_update_rate(self, delay_ms=100):
+        '''
+        Set how often (in milliseconds) the hardware sends automatic
+        sensor/button updates over Bluetooth. Must be 0 (off) or between
+        15 and 1000.
+        '''
+        self.device_notification_request(delay_ms)
+
+    def on_button_press(self, callback):
+        '''
+        Register a function to be called each time the button is pressed.
+        callback() is called with no arguments.
+        '''
+        was_pressed = self.button.state == le.BUTTON_STATE_PRESSED
+
+        def _handle_notification(notification):
+            nonlocal was_pressed
+            pressed = self.button.state == le.BUTTON_STATE_PRESSED
+            if pressed and not was_pressed:
+                callback()
+            was_pressed = pressed
+
+        self.set_notification_callback(_handle_notification)
 
     def reflection(self):
         return self.sensor.reflection

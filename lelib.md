@@ -9,6 +9,24 @@ from lelib import singleMotor, doubleMotor, colorSensor, controller
 
 All four classes share the same `connect()` signature and retry behavior: up to 5 attempts, 1-second delay between retries if the device reports "not ready", raising a `ConnectionError` on final failure.
 
+All four classes also share these two methods:
+
+| Method | Parameters | Description |
+|---|---|---|
+| `set_update_rate(delay_ms=100)` | `delay_ms` *(int, default `100`)* – milliseconds between automatic Bluetooth updates; `0` turns updates off, otherwise must be 15–1000 | Sends the BLE command that controls how often the hardware reports sensor/button state. |
+| `on_button_press(callback)` | `callback` – function called with no arguments | Registers `callback` to fire once each time the hardware button is pressed (rising edge only, not on hold or release). Requires automatic updates to be on (they are by default after `connect()`). |
+
+```python
+motor = singleMotor()
+motor.connect(1234)
+
+motor.set_update_rate(1000)     # only report state once a second
+motor.set_update_rate(0)        # turn automatic updates off entirely
+motor.set_update_rate()         # back to the default, 100ms (10x/second)
+
+motor.on_button_press(lambda: print("Button pressed!"))
+```
+
 ---
 
 ## singleMotor

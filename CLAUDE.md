@@ -6,7 +6,8 @@ A thin Python wrapper around the `legoeducation` pip package. The goal is simple
 ## Key files
 - `lelib.py` — the library (four classes: `singleMotor`, `doubleMotor`, `controller`, `colorSensor`)
 - `lelib.md` — API reference; keep in sync with `lelib.py` whenever methods change
-- `drive.py` — example script: joystick tank-drive + live matplotlib color-sensor graph
+- `projects/` — scripts that build something with lelib (e.g. `drive.py` — joystick tank-drive + live matplotlib color-sensor graph)
+- `tests/` — diagnostic/scratch scripts for exercising lelib or BLE hardware, not end-user builds
 - `README.md` — user-facing intro and quick-start
 
 ## Conventions
