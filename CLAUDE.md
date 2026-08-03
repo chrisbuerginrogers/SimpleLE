@@ -8,6 +8,11 @@ A thin Python wrapper around the `legoeducation` pip package. The goal is simple
 - `lelib.md` — API reference; keep in sync with `lelib.py` whenever methods change
 - `projects/` — scripts that build something with lelib (e.g. `drive.py` — joystick tank-drive + live matplotlib color-sensor graph)
 - `tests/` — diagnostic/scratch scripts for exercising lelib or BLE hardware, not end-user builds
+- `card_mode/` — BLE advertisement reverse-engineering: decoding card taps, device
+  type, sensor readings and controller sticks straight from the advertisement, with
+  no GATT connection. Self-contained (the scripts import each other by bare module
+  name, so run them from inside the folder). `Card_mode.md` is the findings
+  writeup — keep it updated as bytes get identified.
 - `README.md` — user-facing intro and quick-start
 
 ## Conventions
