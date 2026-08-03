@@ -8,10 +8,22 @@ byte that moved, with what it moved from, what it moved to, and what that
 means. Nothing prints while nothing changes, so you can leave it running
 and wave things at the sensor.
 
-Bytes 9-11 churn on every single advertisement (counters and what looks
-like a CRC), so they're filtered out by default — otherwise every packet
-would be an "event" and the real changes would be buried. --all-bytes
-turns them back on.
+Every event shows the full service-data payload, with carets under the
+bytes that moved, so a change is always anchored to the whole packet:
+
+    11:52:06.153  02 09 de 6d 04 09 00 75 7e | 3c 22 9e
+                                    ^^
+                  b5  0xff -> 0x09   DETECTS NOCOLOR -> RED
+
+The `|` marks where the churn bytes start. Bytes 9-11 change on every
+single advertisement (counters and what looks like a CRC), so they're
+excluded from change detection by default — otherwise every packet would
+be an "event" and the real changes would be buried. They're still printed,
+just not treated as news. --all-bytes makes them count as changes too.
+
+--raw adds the previous payload above the new one for direct comparison,
+and --every prints the payload for every advertisement rather than only
+when something moves.
 
 Defaults target the RED#1133 color sensor. Note that a card serial is NOT
 unique on its own — RED#1126, YELLOW#1126 and PURPLE#1126 all exist — so
@@ -53,36 +65,86 @@ def color_name(firmware_code):
 
 
 def describe(index, value, device_type):
-    '''Plain-English reading of one byte, or '' if we don't know it yet.
+    '''Reading of one byte as (label, value_text). Split in two so a change
+    can print as "DETECTS NOCOLOR -> RED" rather than repeating the label on
+    both sides. value_text is '' for bytes whose meaning doesn't vary.
     See Card_mode.md for where each of these came from.'''
     if index == 0:
-        return DEVICE_TYPE_NAMES.get(value, f'unknown device type 0x{value:02x}')
+        return 'device type', DEVICE_TYPE_NAMES.get(value, f'unknown 0x{value:02x}')
     if index == 1:
-        return f'card colour {color_name(value)}'
+        return 'card colour', color_name(value)
     if index in (2, 7):
-        return 'card token'
+        return 'card token', ''
     if index in (3, 4):
-        return 'card serial'
+        return 'card serial', ''
     if index == 5:
         if device_type == DEVICE_TYPE_COLOR_SENSOR:
-            return f'DETECTS {color_name(_signed_byte(value))}'
+            return 'DETECTS', color_name(_signed_byte(value))
         if device_type == DEVICE_TYPE_CONTROLLER:
-            return f'right stick {_signed_byte(value):+d}'
+            return 'right stick', f'{_signed_byte(value):+d}'
     if index == 6 and device_type == DEVICE_TYPE_CONTROLLER:
-        return f'left stick {_signed_byte(value):+d}'
+        return 'left stick', f'{_signed_byte(value):+d}'
     if index == 8:
-        return 'battery?'
+        return 'battery?', ''
     if index in CHURN_BYTES:
-        return 'counter/CRC'
-    return ''
+        return 'counter/CRC', ''
+    return '', ''
+
+
+def describe_static(index, value, device_type):
+    label, text = describe(index, value, device_type)
+    return f"{label} {text}".strip()
+
+
+def describe_change(index, old, new, device_type):
+    old_label, old_text = describe(index, old, device_type)
+    new_label, new_text = describe(index, new, device_type)
+    if old_label == new_label:
+        if old_text and new_text and old_text != new_text:
+            return f"{old_label} {old_text} -> {new_text}"
+        return old_label
+    return f"{describe_static(index, old, device_type)} -> " \
+           f"{describe_static(index, new, device_type)}"
+
+
+def format_payload(payload):
+    '''Spaced hex with a divider before the churn bytes, so the stable
+    part of the packet reads as a unit and the counters stay visually
+    separate.'''
+    parts = []
+    for i, value in enumerate(payload):
+        if i == min(CHURN_BYTES):
+            parts.append('|')
+        parts.append(f'{value:02x}')
+    return ' '.join(parts)
+
+
+def format_marker(length, changed):
+    '''Caret line that lines up under format_payload().'''
+    parts = []
+    for i in range(length):
+        if i == min(CHURN_BYTES):
+            parts.append(' ')
+        parts.append('^^' if i in changed else '  ')
+    return ' '.join(parts).rstrip()
+
+
+def format_ruler(length):
+    parts = []
+    for i in range(length):
+        if i == min(CHURN_BYTES):
+            parts.append(' ')
+        parts.append(f'{i:2d}')
+    return ' '.join(parts)
 
 
 class Watcher:
-    def __init__(self, serial, color, watched_bytes, show_raw):
+    def __init__(self, serial, color, watched_bytes, show_raw, show_every=False):
         self.serial = serial
         self.color = color.upper() if color else None
         self.watched = watched_bytes
         self.show_raw = show_raw
+        self.show_every = show_every
         self.previous = None
         self.address = None
         self.packets = 0
@@ -111,34 +173,42 @@ class Watcher:
             kind = DEVICE_TYPE_NAMES.get(device_type, f'0x{device_type:02x}')
             print(f"Locked on {color_name(payload[1])}#{self.serial} ({kind}) "
                   f"at {device.address}")
-            print(f"  initial payload: {payload.hex()}")
+            print(f"  byte   {format_ruler(len(payload))}")
+            print(f"  hex    {format_payload(payload)}")
             for i in sorted(self.watched):
                 if i < len(payload):
-                    meaning = describe(i, payload[i], device_type)
+                    meaning = describe_static(i, payload[i], device_type)
                     print(f"    b{i:<2} 0x{payload[i]:02x}   {meaning}")
             print(f"\nWatching bytes {sorted(self.watched)} — "
                   f"nothing prints until something moves.\n")
             self.previous = payload
             return
 
-        if len(payload) != len(self.previous):
-            print(f"{now}  LENGTH {len(self.previous)} -> {len(payload)}   "
-                  f"the device added or dropped a field")
+        changed = [i for i in sorted(self.watched)
+                   if i < len(payload) and i < len(self.previous)
+                   and self.previous[i] != payload[i]]
+        length_changed = len(payload) != len(self.previous)
 
-        for i in sorted(self.watched):
-            if i >= len(payload) or i >= len(self.previous):
-                continue
-            old, new = self.previous[i], payload[i]
-            if old == new:
-                continue
-            self.changes[i] += 1
-            was = describe(i, old, device_type)
-            became = describe(i, new, device_type)
-            arrow = f"{was} -> {became}" if was != became else was
-            print(f"{now}  b{i:<2} 0x{old:02x} -> 0x{new:02x}   {arrow}")
-            if self.show_raw:
-                print(f"          {self.previous.hex()}")
-                print(f"          {payload.hex()}")
+        if changed or length_changed or self.show_every:
+            if length_changed:
+                print(f"{now}  LENGTH {len(self.previous)} -> {len(payload)}   "
+                      f"the device added or dropped a field")
+            # Full packet first, so every event is anchored to the whole
+            # payload rather than just the byte that moved.
+            if self.show_raw or length_changed:
+                print(f"{now}  was  {format_payload(self.previous)}")
+                print(f"{' ' * len(now)}  now  {format_payload(payload)}")
+            else:
+                print(f"{now}  {format_payload(payload)}")
+            if changed:
+                marker = format_marker(len(payload), set(changed))
+                indent = ' ' * (len(now) + (7 if (self.show_raw or length_changed) else 2))
+                print(f"{indent}{marker}")
+            for i in changed:
+                self.changes[i] += 1
+                old, new = self.previous[i], payload[i]
+                meaning = describe_change(i, old, new, device_type)
+                print(f"{' ' * len(now)}  b{i:<2} 0x{old:02x} -> 0x{new:02x}   {meaning}")
 
         self.previous = payload
 
@@ -171,7 +241,9 @@ def main():
     parser.add_argument('--bytes', default=None,
                         help='Watch only these byte indexes, e.g. 5,6')
     parser.add_argument('--raw', action='store_true',
-                        help='Print the full before/after payload on every change')
+                        help='Show the previous payload alongside the new one on each change')
+    parser.add_argument('--every', action='store_true',
+                        help='Print the full payload for every advertisement, not just changes')
     args = parser.parse_args()
 
     if args.bytes:
@@ -180,7 +252,7 @@ def main():
         watched = set(range(12)) if args.all_bytes else set(range(12)) - CHURN_BYTES
 
     color = None if args.color.upper() == 'ANY' else args.color
-    watcher = Watcher(args.serial, color, watched, args.raw)
+    watcher = Watcher(args.serial, color, watched, args.raw, args.every)
     print(f"Looking for {args.color.upper()}#{args.serial}... "
           f"(is it powered on and in range?)")
     try:

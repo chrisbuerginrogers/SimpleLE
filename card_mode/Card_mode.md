@@ -261,8 +261,15 @@ moved and nothing was touched. A counter doesn't do that; a live analog
 measurement dithering around its true level does. Combined with the
 long-run decline, battery voltage fits well.
 
+**But it is not monotonic.** On the color sensor b8 read `86`, then `85`,
+then `7f`, then `85` again twenty minutes later — a rise of 6. Battery
+voltage does recover when load drops, so this isn't fatal to the reading,
+but "slowly declining counter" is definitely wrong and "battery" is not
+established. A temperature reading would behave similarly.
+
 Test to confirm: compare a freshly charged device against a nearly flat
-one, and check whether the oscillation band tracks the level.
+one, and check whether the oscillation band tracks the level. If that
+fails, treat b8 as an unidentified slowly-varying analog value.
 
 ## Tooling
 
