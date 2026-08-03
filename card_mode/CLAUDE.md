@@ -115,6 +115,7 @@ Raw data for re-checking any of this is in `cards.csv` (20 cards) and
 |---|---|
 | `scan_advertising.py` | live table of everything in range |
 | `watch_service_data.py` | lock onto one card, log every byte change with the full payload |
+| `verify_colors.py` | prompt through all 11 colours, verify byte 5 against the firmware table |
 | `log_cards.py` | tap-through card logger, keyed on (colour, serial) |
 | `capture_controller.py` | guided capture protocol for the controller |
 | `capture_colorsensor.py` | guided capture protocol for the color sensor |

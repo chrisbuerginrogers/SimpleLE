@@ -158,10 +158,24 @@ observed against known targets:
 | `0x0a` | WHITE | white brick at contact, 26/26 packets |
 
 The RED and WHITE rows were predicted before the measurement, and the
-controller in the same scans stayed unaffected. The remaining codes are
-assumed from `legoeducation/rpc_message.py` but not yet verified against
-real bricks — `capture_colorsensor.py` walks the full set if you want them
-nailed down.
+controller in the same scans stayed unaffected. **The remaining codes are
+assumed from `legoeducation/rpc_message.py`, not measured.**
+
+`verify_colors.py` closes that gap: it prompts through all 11 App colors,
+samples byte 5 for each, and reports whether the raw byte matches the
+firmware table *and* whether `_firmware_to_app()` lands on the right App
+code. Skipping a color you have no brick for is supported — a skipped row
+is honest, a guessed one isn't.
+
+```bash
+python verify_colors.py
+python verify_colors.py --only 4,8,10    # just the ones you're unsure of
+```
+
+One subtlety it handles: a **black** brick reads firmware `0` (BLACK),
+which also maps to App `NOCOLOR` — so "no color" can legitimately arrive
+as either `0xff` or `0x00`. That's reported as a pass with a note, not a
+failure.
 
 ### Byte 6 on a color sensor — not reflection
 
@@ -288,6 +302,7 @@ fails, treat b8 as an unidentified slowly-varying analog value.
 |---|---|
 | `scan_advertising.py` | live table of everything in range, for eyeballing |
 | `watch_service_data.py` | lock onto one card, log every byte change |
+| `verify_colors.py` | prompt through all 11 colors, verify what byte 5 reports |
 | `log_cards.py` | tap-through card logger — one row per (color, serial) |
 | `capture_controller.py` | guided capture protocol for the controller |
 | `capture_colorsensor.py` | guided capture protocol for the color sensor |
