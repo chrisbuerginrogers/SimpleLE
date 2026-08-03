@@ -23,16 +23,26 @@ They collide confusingly — App 2 is Yellow, firmware 2 is Purple. So the
 raw byte is recorded alongside the translated App code, which means this
 verifies `_firmware_to_app()` itself rather than trusting it.
 
-Usage:
-    python verify_colors.py
-    python verify_colors.py --settle 4        # sample longer per colour
-    python verify_colors.py --out mycolors.csv
+BLACK is tested too even though the App has no such colour: firmware 0 is
+BLACK and translates to App "No color". So a black brick and an empty
+sensor both end up as No color, and the only way to tell them apart is the
+raw byte. Those two targets are therefore checked strictly against the
+wire byte rather than the translated code.
 
-For each colour it prompts, waits for Enter, then samples for a couple of
+Usage:
+    python verify_colors.py                       # everything
+    python verify_colors.py --only orange,black,teal
+    python verify_colors.py --only 4,8,10         # App codes also work
+    python verify_colors.py --settle 4            # sample longer per colour
+
+For each target it prompts, waits for Enter, then samples for a couple of
 seconds and takes the most common byte 5 — a single advertisement can land
 mid-transition, so the modal value over a window is steadier than one
-reading. Press 's' then Enter to skip a colour you don't have a brick for;
-a skipped row is honest, a guessed one isn't.
+reading. Anything that doesn't come back clean offers an immediate
+re-measure, so a fumbled brick doesn't cost you a rerun.
+
+Press 's' then Enter to skip a colour you don't have a brick for; a
+skipped row is honest, a guessed one isn't.
 
 Hold the brick flat against the sensor face and keep the distance the same
 across colours.
@@ -42,11 +52,12 @@ import argparse
 import asyncio
 import csv
 import sys
-from collections import Counter
+from collections import Counter, namedtuple
 
 from bleak import BleakScanner
 from legoeducation.color_map import (_APP_TO_FIRMWARE, _firmware_to_app,
-                                     LEGO_COLOR_NAME_MAP)
+                                     LEGO_COLOR_NAME_MAP, LEGO_COLOR_NOCOLOR)
+from legoeducation.rpc_message import LEGO_COLOR_BLACK as _FW_BLACK
 
 from adv_capture import extract_payloads
 from scan_advertising import DEVICE_TYPE_COLOR_SENSOR, _signed_byte, is_lego
@@ -55,8 +66,16 @@ DEFAULT_SETTLE = 2.5
 MIN_PAYLOAD = 6
 COLOR_BYTE = 5
 
-# Extra guidance where the App name alone is ambiguous or the target is
-# awkward to present.
+# key          — what --only matches on
+# label        — shown in prompts and the report
+# expected_raw — the byte we expect on the wire
+# expected_app — the App code it should translate to
+# strict       — compare the raw byte, not the translated code. Needed where
+#                two targets share an App code (No color and Black both map
+#                to App 0, so the translation can't tell them apart).
+# hint         — extra guidance when the name alone is ambiguous
+Target = namedtuple('Target', 'key label expected_raw expected_app strict hint')
+
 HINTS = {
     0: 'nothing in front of the sensor — take everything away',
     4: 'teal / turquoise',
@@ -75,6 +94,41 @@ def expected_wire_byte(app_code):
     if firmware is None:
         return None
     return firmware & 0xff
+
+
+def build_targets():
+    targets = []
+    for app_code in sorted(LEGO_COLOR_NAME_MAP):
+        name = app_name(app_code)
+        targets.append(Target(name.lower(), name, expected_wire_byte(app_code),
+                              app_code, app_code == LEGO_COLOR_NOCOLOR,
+                              HINTS.get(app_code)))
+        if app_code == LEGO_COLOR_NOCOLOR:
+            targets.append(Target(
+                'black', 'BLACK', _FW_BLACK & 0xff, LEGO_COLOR_NOCOLOR, True,
+                'a black brick. The App has no BLACK — firmware 0 maps to '
+                'No color, so only the raw byte separates them'))
+    return targets
+
+
+def select_targets(targets, only):
+    '''--only accepts names (orange,black,teal) or App codes (4,8,10).
+    Numbers never select BLACK, since it has no App code of its own.'''
+    if not only:
+        return targets, []
+    wanted = [w.strip().lower() for w in only.split(',') if w.strip()]
+    chosen, unknown = [], []
+    for want in wanted:
+        if want.isdigit():
+            match = [t for t in targets if t.key != 'black'
+                     and t.expected_app == int(want)]
+        else:
+            match = [t for t in targets if t.key == want]
+        if match:
+            chosen.extend(m for m in match if m not in chosen)
+        else:
+            unknown.append(want)
+    return chosen, unknown
 
 
 async def _ainput(prompt):
@@ -130,7 +184,7 @@ class Sampler:
         return list(self.samples)
 
 
-def verdict_for(app_code, samples):
+def verdict_for(target, samples):
     '''Returns (raw_byte, seen_app, verdict, note).'''
     if not samples:
         return None, None, 'NO DATA', 'no advertisements arrived'
@@ -143,17 +197,57 @@ def verdict_for(app_code, samples):
         others = ' '.join(f"0x{v:02x}x{n}" for v, n in counts.most_common()[1:])
         stability += f", also saw {others}"
 
-    expected_raw = expected_wire_byte(app_code)
-    if seen_app == app_code:
+    if target.strict:
+        # No color and Black share App code 0, so the translated value can't
+        # distinguish them — only the wire byte can.
+        if raw == target.expected_raw:
+            return raw, seen_app, 'ok', stability
+        sibling = 'BLACK' if target.key != 'black' else 'No color'
+        if seen_app == target.expected_app:
+            return raw, seen_app, 'MISMATCH', (
+                f"read 0x{raw:02x}, which is the {sibling} code — the sensor "
+                f"may not distinguish the two. {stability}")
+        return raw, seen_app, 'MISMATCH', f"read {app_name(seen_app)} — {stability}"
+
+    if seen_app == target.expected_app:
         note = stability
-        if expected_raw is not None and raw != expected_raw:
+        if target.expected_raw is not None and raw != target.expected_raw:
             note = (f"maps correctly but via 0x{raw:02x}, not the expected "
-                    f"0x{expected_raw:02x} — {stability}")
+                    f"0x{target.expected_raw:02x} — {stability}")
         return raw, seen_app, 'ok', note
     return raw, seen_app, 'MISMATCH', f"read {app_name(seen_app)} — {stability}"
 
 
-async def run(sampler, colors, settle):
+def result_row(target, raw, seen_app, verdict, note):
+    return {'target': target.label,
+            'app_code': '' if target.key == 'black' else target.expected_app,
+            'expected_raw': (f"0x{target.expected_raw:02x}"
+                             if target.expected_raw is not None else ''),
+            'raw': f"0x{raw:02x}" if raw is not None else '',
+            'seen_app': '' if seen_app is None else seen_app,
+            'verdict': verdict, 'note': note}
+
+
+async def measure_target(sampler, target, settle):
+    '''Measure once, and offer a re-measure whenever it doesn't come back
+    clean — a fumbled brick shouldn't cost a whole rerun.'''
+    while True:
+        print(f"\n       measuring {settle:.1f}s, hold it steady...")
+        samples = await sampler.measure(settle)
+        raw, seen_app, verdict, note = verdict_for(target, samples)
+        raw_text = f"0x{raw:02x}" if raw is not None else '--'
+        mark = {'ok': 'OK ', 'MISMATCH': '!! ', 'NO DATA': '?? '}[verdict]
+        print(f"       {mark} byte 5 = {raw_text}   {note}")
+        if verdict == 'ok':
+            print()
+            return raw, seen_app, verdict, note
+        again = await _ainput("       [Enter] accept  [r] re-measure > ")
+        if not again.strip().lower().startswith('r'):
+            print()
+            return raw, seen_app, verdict, note
+
+
+async def run(sampler, targets, settle):
     results = []
     print("Waiting for a color sensor...")
     waited = 0.0
@@ -168,44 +262,28 @@ async def run(sampler, colors, settle):
     print("Hold each brick flat against the sensor, same distance every time.")
     print("Enter to measure, 's' + Enter to skip.\n")
 
-    for app_code in colors:
-        name = app_name(app_code)
-        hint = HINTS.get(app_code)
-        label = f"{name}" + (f"  ({hint})" if hint else '')
-        expected_raw = expected_wire_byte(app_code)
-        expected_text = f"expect byte 0x{expected_raw:02x}" if expected_raw is not None else ''
-
-        answer = await _ainput(f"  [{app_code:2d}] {label:<48} {expected_text}\n"
+    for target in targets:
+        label = target.label + (f"  ({target.hint})" if target.hint else '')
+        expected_text = (f"expect byte 0x{target.expected_raw:02x}"
+                         if target.expected_raw is not None else '')
+        answer = await _ainput(f"  {label}\n       {expected_text}\n"
                                f"       Enter to measure > ")
         if answer.strip().lower().startswith('s'):
-            results.append({'app_code': app_code, 'name': name, 'raw': '',
-                            'seen_app': '', 'verdict': 'skipped', 'note': ''})
+            results.append(result_row(target, None, None, 'skipped', ''))
             print("\n       skipped\n")
             continue
-
-        # input() leaves the cursor on the prompt line, so break the line
-        # before reporting — and say something during the sampling wait.
-        print(f"\n       measuring {settle:.1f}s, hold it steady...")
-        samples = await sampler.measure(settle)
-        raw, seen_app, verdict, note = verdict_for(app_code, samples)
-        raw_text = f"0x{raw:02x}" if raw is not None else '--'
-        mark = {'ok': 'OK ', 'MISMATCH': '!! ', 'NO DATA': '?? '}[verdict]
-        print(f"       {mark} byte 5 = {raw_text}   {note}\n")
-        results.append({'app_code': app_code, 'name': name, 'raw': raw_text,
-                        'seen_app': '' if seen_app is None else seen_app,
-                        'verdict': verdict, 'note': note})
+        raw, seen_app, verdict, note = await measure_target(sampler, target, settle)
+        results.append(result_row(target, raw, seen_app, verdict, note))
     return results
 
 
 def report(results):
-    print('=' * 72)
-    print('  App  Name       Expected  Got   Maps to        Verdict')
-    print('  ' + '-' * 68)
+    print('=' * 74)
+    print('  Target      Expected  Got   Maps to        Verdict')
+    print('  ' + '-' * 70)
     for r in results:
-        expected_raw = expected_wire_byte(r['app_code'])
-        exp = f"0x{expected_raw:02x}" if expected_raw is not None else '--'
         maps = app_name(r['seen_app']) if r['seen_app'] != '' else ''
-        print(f"  {r['app_code']:>3}  {r['name']:<10} {exp:>8}  {r['raw']:>4}   "
+        print(f"  {r['target']:<11} {r['expected_raw']:>8}  {r['raw'] or '--':>4}   "
               f"{maps:<14} {r['verdict']}")
 
     measured = [r for r in results if r['verdict'] in ('ok', 'MISMATCH')]
@@ -213,17 +291,17 @@ def report(results):
     bad = [r for r in measured if r['verdict'] == 'MISMATCH']
     skipped = [r for r in results if r['verdict'] == 'skipped']
     print()
-    print(f"  {len(good)}/{len(measured)} measured colours decoded correctly"
+    print(f"  {len(good)}/{len(measured)} measured targets decoded correctly"
           + (f", {len(skipped)} skipped" if skipped else ''))
     if bad:
-        print("\n  Mismatches — these break the firmware->App table:")
+        print("\n  Mismatches — these contradict the firmware table:")
         for r in bad:
-            print(f"    {r['name']}: {r['note']}")
-    print('=' * 72)
+            print(f"    {r['target']}: {r['note']}")
+    print('=' * 74)
 
 
 def write_csv(results, path):
-    fields = ['app_code', 'name', 'raw', 'seen_app', 'verdict', 'note']
+    fields = ['target', 'app_code', 'expected_raw', 'raw', 'seen_app', 'verdict', 'note']
     with open(path, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
@@ -231,16 +309,20 @@ def write_csv(results, path):
 
 
 async def _main(args):
-    colors = sorted(LEGO_COLOR_NAME_MAP)
-    if args.only:
-        wanted = {int(c) for c in args.only.split(',')}
-        colors = [c for c in colors if c in wanted]
+    targets, unknown = select_targets(build_targets(), args.only)
+    if unknown:
+        print(f"Don't know these colours: {', '.join(unknown)}")
+        print(f"Valid names: {', '.join(t.key for t in build_targets())}")
+        return 1
+    if not targets:
+        print("Nothing selected.")
+        return 1
 
     sampler = Sampler(args.serial, args.color)
     results = []
     async with BleakScanner(detection_callback=sampler.on_advertisement):
         try:
-            results = await run(sampler, colors, args.settle)
+            results = await run(sampler, targets, args.settle)
         except (KeyboardInterrupt, EOFError):
             print("\nInterrupted.")
     if not results:
@@ -261,7 +343,8 @@ def main():
     parser.add_argument('--color', default=None,
                         help='Only use the sensor carrying a card of this colour')
     parser.add_argument('--only', default=None,
-                        help='Test only these App colour codes, e.g. 4,8,10')
+                        help='Test only these targets, by name (orange,black,teal) '
+                             'or App code (4,8,10). Numbers never select black.')
     parser.add_argument('--out', default='color_verify.csv', help='CSV output path')
     args = parser.parse_args()
     try:

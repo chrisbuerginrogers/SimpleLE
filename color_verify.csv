@@ -1,0 +1,12 @@
+app_code,name,raw,seen_app,verdict,note
+0,NOCOLOR,0xff,0,ok,12/12 packets
+1,RED,0x09,1,ok,11/11 packets
+2,YELLOW,0x07,2,ok,9/9 packets
+3,BLUE,0xff,0,MISMATCH,read NOCOLOR — 7/7 packets
+4,TEAL,0xff,0,MISMATCH,read NOCOLOR — 8/8 packets
+5,GREEN,0x06,5,ok,8/8 packets
+6,PURPLE,0x09,1,MISMATCH,read RED — 8/8 packets
+7,WHITE,0x0a,7,ok,7/7 packets
+8,MAGENTA,0xff,0,MISMATCH,read NOCOLOR — 8/8 packets
+9,ORANGE,0x09,1,MISMATCH,read RED — 11/11 packets
+10,AZURE,0xff,0,MISMATCH,read NOCOLOR — 10/10 packets

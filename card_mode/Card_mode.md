@@ -168,14 +168,26 @@ code. Skipping a color you have no brick for is supported — a skipped row
 is honest, a guessed one isn't.
 
 ```bash
-python verify_colors.py
-python verify_colors.py --only 4,8,10    # just the ones you're unsure of
+python verify_colors.py                              # everything
+python verify_colors.py --only orange,black,teal,blue
+python verify_colors.py --only 4,8,10                # App codes work too
 ```
 
-One subtlety it handles: a **black** brick reads firmware `0` (BLACK),
-which also maps to App `NOCOLOR` — so "no color" can legitimately arrive
-as either `0xff` or `0x00`. That's reported as a pass with a note, not a
-failure.
+Anything that doesn't come back clean offers an immediate re-measure, so
+a fumbled brick doesn't cost a whole rerun.
+
+**Black is tested even though the App has no BLACK colour.** Firmware `0`
+is BLACK and translates to App `No color`, so a black brick and an empty
+sensor both arrive as `No color` and *only the raw byte separates them*.
+Those two targets are therefore checked strictly against the wire byte
+(`0x00` vs `0xff`) rather than the translated code — otherwise each would
+pass while reading the other.
+
+That's a real question about the hardware, not just bookkeeping: if a
+black brick reports `0xff`, the sensor cannot distinguish black from
+nothing, and `colorSensor.detect_color()` returning `'No color'` is
+ambiguous by design. Because `black` has no App code, `--only` reaches it
+by name only; numbers never select it.
 
 ### Byte 6 on a color sensor — not reflection
 
