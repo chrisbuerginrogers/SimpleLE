@@ -149,13 +149,46 @@ color code, in every advertisement. **No connection required.**
 This was confirmed by prediction rather than curve-fitting. Values
 observed against known targets:
 
-| Byte 5 | Firmware code | Target |
-|---|---|---|
-| `0xff` | NONE (−1) | nothing in front of the sensor |
-| `0x02` | PURPLE | resting on something purple |
-| `0x06` | GREEN | observed live, target not controlled |
-| `0x09` | RED | red brick at contact, 24/24 packets |
-| `0x0a` | WHITE | white brick at contact, 26/26 packets |
+| App | Color | Expected byte | Verified | Evidence |
+|---|---|---|---|---|
+| 0 | No color | `0xff` | ✅ | 12/12 packets, plus every idle observation all session |
+| — | *Black* | `0x00` | ❌ **reads `0xff`** | 11/11 packets — see below |
+| 1 | Red | `0x09` | ✅ | 11/11, and 24/24 in an earlier predicted test |
+| 2 | Yellow | `0x07` | ✅ | 9/9 packets |
+| 3 | Blue | `0x03` | ⬜ not yet | read `0xff` (nothing detected) — needs a retest |
+| 4 | Teal | `0x05` | ⬜ not yet | read `0xff` (nothing detected) — needs a retest |
+| 5 | Green | `0x06` | ✅ | 8/8, plus observed live earlier |
+| 6 | Purple | `0x02` | ✅ | observed live earlier; the sweep read RED, see below |
+| 7 | White | `0x0a` | ✅ | 7/7, and 26/26 in an earlier predicted test |
+| 8 | Magenta | `0x01` | n/a | card-only colour, sensor can't detect it |
+| 9 | Orange | `0x08` | n/a | card-only colour, sensor can't detect it |
+| 10 | Azure | `0x04` | n/a | card-only colour, sensor can't detect it |
+
+**Six of the eight testable colors are confirmed.** Blue and teal both read
+`0xff` — the sensor detected nothing at all rather than the wrong color,
+which points at brick presentation rather than a wrong table entry. They
+need re-measuring, not rewriting.
+
+**Magenta, orange and azure are not testable.** `SENSOR_DETECTABLE_COLORS`
+in `legoeducation/color_map.py` is `{RED, YELLOW, BLUE, TEAL, GREEN,
+PURPLE, WHITE}` — the other three are *card* colors only. Asking the sensor
+for them and calling the answer a mismatch measures nothing, so
+`verify_colors.py` now excludes them from a default run and reports them as
+`n/a` when named explicitly.
+
+**Purple's mismatch was measurement, not decoding.** The sweep read `0x09`
+(RED) for the purple brick, but `0x02` was observed directly from this same
+sensor earlier in the session while it sat on something purple. Brick
+distance, angle and room light all move this reading — re-measure before
+believing any single mismatch.
+
+**Black reads as "no color", and that's a real finding.** A black brick
+gave `0xff` on 11/11 packets, not the firmware `BLACK = 0x00`. So this
+sensor doesn't distinguish black from an empty field of view, and
+`colorSensor.detect_color()` returning `'No color'` is genuinely ambiguous.
+Worth confirming with a second black brick before treating it as settled.
+
+Raw results for both runs are in `color_verify.csv`.
 
 The RED and WHITE rows were predicted before the measurement, and the
 controller in the same scans stayed unaffected. **The remaining codes are

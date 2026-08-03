@@ -1,0 +1,14 @@
+run,target,app_code,expected_raw,raw,seen_app,verdict,note
+run1 full sweep,NOCOLOR,0,0xff,0xff,0,ok,12/12 packets
+run1 full sweep,RED,1,0x09,0x09,1,ok,11/11 packets
+run1 full sweep,YELLOW,2,0x07,0x07,2,ok,9/9 packets
+run1 full sweep,BLUE,3,0x03,0xff,0,MISMATCH,read NOCOLOR — 7/7 packets
+run1 full sweep,TEAL,4,0x05,0xff,0,MISMATCH,read NOCOLOR — 8/8 packets
+run1 full sweep,GREEN,5,0x06,0x06,5,ok,8/8 packets
+run1 full sweep,PURPLE,6,0x02,0x09,1,MISMATCH,read RED — 8/8 packets
+run1 full sweep,WHITE,7,0x0a,0x0a,7,ok,7/7 packets
+run1 full sweep,MAGENTA,8,0x01,0xff,0,n/a,"card-only colour, not sensor-detectable — read NOCOLOR — 8/8 packets"
+run1 full sweep,ORANGE,9,0x08,0x09,1,n/a,"card-only colour, not sensor-detectable — read RED — 11/11 packets"
+run1 full sweep,AZURE,10,0x04,0xff,0,n/a,"card-only colour, not sensor-detectable — read NOCOLOR — 10/10 packets"
+run2 partial,ORANGE,9,0x08,0xff,0,n/a,"card-only colour, not sensor-detectable — read NOCOLOR — 7/7 packets"
+run2 partial,BLACK,,0x00,0xff,0,MISMATCH,"read 0xff, which is the No color code — the sensor may not distinguish the two. 11/11 packets"

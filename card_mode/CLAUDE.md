@@ -21,6 +21,9 @@ already stripped):
 | 2 | per-card token | not derived from anything visible |
 | 3–4 | card serial, little-endian | confirmed |
 | 5 | **sensor:** live detected colour (`0xff` = none) · **controller:** right stick | confirmed |
+| | — colour codes verified: No color, Red, Yellow, Green, Purple, White | measured |
+| | — still unverified: Blue, Teal (both read `0xff` — retest) | open |
+| | — Magenta/Orange/Azure are **card-only**, sensor can't detect them | n/a |
 | 6 | **sensor:** always `0x00`, *not* reflection · **controller:** left stick | confirmed |
 | 7 | per-card token | not derived from anything visible |
 | 8 | slowly-varying analog value, possibly battery | unidentified |
@@ -45,6 +48,15 @@ Manufacturer data (company ID `0x0397`) uses a different layout —
   requires a GATT connection; don't try to make it connectionless.
 - **A card's bytes are deterministic across devices.** The same card
   produces identical b1/b2/b3/b4/b7 on any hardware it's tapped onto.
+- **The sensor only detects 7 colours.** `SENSOR_DETECTABLE_COLORS` is
+  `{RED, YELLOW, BLUE, TEAL, GREEN, PURPLE, WHITE}`. Magenta, orange and
+  azure exist only as *card* colours — testing the sensor against them
+  measures nothing. A black brick reads `0xff` (No color), so black and
+  an empty field of view are indistinguishable.
+- **Re-measure before believing a colour mismatch.** Brick distance, angle
+  and room light all move byte 5. A purple brick read as RED in one sweep
+  while `0x02` had been observed directly from the same sensor minutes
+  earlier.
 
 ## Ruled out — don't retry these
 

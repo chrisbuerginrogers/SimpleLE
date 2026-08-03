@@ -51,12 +51,15 @@ across colours.
 import argparse
 import asyncio
 import csv
+import os
 import sys
 from collections import Counter, namedtuple
+from datetime import datetime
 
 from bleak import BleakScanner
 from legoeducation.color_map import (_APP_TO_FIRMWARE, _firmware_to_app,
-                                     LEGO_COLOR_NAME_MAP, LEGO_COLOR_NOCOLOR)
+                                     LEGO_COLOR_NAME_MAP, LEGO_COLOR_NOCOLOR,
+                                     SENSOR_DETECTABLE_COLORS)
 from legoeducation.rpc_message import LEGO_COLOR_BLACK as _FW_BLACK
 
 from adv_capture import extract_payloads
@@ -74,7 +77,12 @@ COLOR_BYTE = 5
 #                two targets share an App code (No color and Black both map
 #                to App 0, so the translation can't tell them apart).
 # hint         — extra guidance when the name alone is ambiguous
-Target = namedtuple('Target', 'key label expected_raw expected_app strict hint')
+# detectable   — whether the sensor is *specified* to detect this colour at
+#                all. MAGENTA, ORANGE and AZURE are card-only colours; asking
+#                the sensor for them and calling the result a mismatch tests
+#                nothing.
+Target = namedtuple('Target',
+                    'key label expected_raw expected_app strict detectable hint')
 
 HINTS = {
     0: 'nothing in front of the sensor — take everything away',
@@ -100,12 +108,14 @@ def build_targets():
     targets = []
     for app_code in sorted(LEGO_COLOR_NAME_MAP):
         name = app_name(app_code)
+        detectable = (app_code in SENSOR_DETECTABLE_COLORS
+                      or app_code == LEGO_COLOR_NOCOLOR)
         targets.append(Target(name.lower(), name, expected_wire_byte(app_code),
                               app_code, app_code == LEGO_COLOR_NOCOLOR,
-                              HINTS.get(app_code)))
+                              detectable, HINTS.get(app_code)))
         if app_code == LEGO_COLOR_NOCOLOR:
             targets.append(Target(
-                'black', 'BLACK', _FW_BLACK & 0xff, LEGO_COLOR_NOCOLOR, True,
+                'black', 'BLACK', _FW_BLACK & 0xff, LEGO_COLOR_NOCOLOR, True, True,
                 'a black brick. The App has no BLACK — firmware 0 maps to '
                 'No color, so only the raw byte separates them'))
     return targets
@@ -113,9 +123,13 @@ def build_targets():
 
 def select_targets(targets, only):
     '''--only accepts names (orange,black,teal) or App codes (4,8,10).
-    Numbers never select BLACK, since it has no App code of its own.'''
+    Numbers never select BLACK, since it has no App code of its own.
+
+    With no --only, the undetectable card-only colours are left out: the
+    sensor can't report them, so including them by default just manufactures
+    failures. Naming one explicitly still runs it.'''
     if not only:
-        return targets, []
+        return [t for t in targets if t.detectable], []
     wanted = [w.strip().lower() for w in only.split(',') if w.strip()]
     chosen, unknown = [], []
     for want in wanted:
@@ -215,6 +229,15 @@ def verdict_for(target, samples):
             note = (f"maps correctly but via 0x{raw:02x}, not the expected "
                     f"0x{target.expected_raw:02x} — {stability}")
         return raw, seen_app, 'ok', note
+
+    if not target.detectable:
+        # The sensor isn't specified to detect this colour, so a "wrong"
+        # answer says nothing about the decode table. Reporting it as a
+        # mismatch would be measuring the wrong thing.
+        return raw, seen_app, 'n/a', (
+            f"card-only colour, not in SENSOR_DETECTABLE_COLORS — sensor "
+            f"read {app_name(seen_app)}. {stability}")
+
     return raw, seen_app, 'MISMATCH', f"read {app_name(seen_app)} — {stability}"
 
 
@@ -236,9 +259,9 @@ async def measure_target(sampler, target, settle):
         samples = await sampler.measure(settle)
         raw, seen_app, verdict, note = verdict_for(target, samples)
         raw_text = f"0x{raw:02x}" if raw is not None else '--'
-        mark = {'ok': 'OK ', 'MISMATCH': '!! ', 'NO DATA': '?? '}[verdict]
+        mark = {'ok': 'OK ', 'MISMATCH': '!! ', 'NO DATA': '?? ', 'n/a': '-- '}[verdict]
         print(f"       {mark} byte 5 = {raw_text}   {note}")
-        if verdict == 'ok':
+        if verdict in ('ok', 'n/a'):
             print()
             return raw, seen_app, verdict, note
         again = await _ainput("       [Enter] accept  [r] re-measure > ")
@@ -266,6 +289,9 @@ async def run(sampler, targets, settle):
         label = target.label + (f"  ({target.hint})" if target.hint else '')
         expected_text = (f"expect byte 0x{target.expected_raw:02x}"
                          if target.expected_raw is not None else '')
+        if not target.detectable:
+            expected_text += ("   [card-only colour — the sensor isn't "
+                              "specified to detect this]")
         answer = await _ainput(f"  {label}\n       {expected_text}\n"
                                f"       Enter to measure > ")
         if answer.strip().lower().startswith('s'):
@@ -290,22 +316,41 @@ def report(results):
     good = [r for r in measured if r['verdict'] == 'ok']
     bad = [r for r in measured if r['verdict'] == 'MISMATCH']
     skipped = [r for r in results if r['verdict'] == 'skipped']
+    not_applicable = [r for r in results if r['verdict'] == 'n/a']
     print()
-    print(f"  {len(good)}/{len(measured)} measured targets decoded correctly"
-          + (f", {len(skipped)} skipped" if skipped else ''))
+    print(f"  {len(good)}/{len(measured)} testable targets decoded correctly"
+          + (f", {len(skipped)} skipped" if skipped else '')
+          + (f", {len(not_applicable)} n/a" if not_applicable else ''))
     if bad:
         print("\n  Mismatches — these contradict the firmware table:")
         for r in bad:
             print(f"    {r['target']}: {r['note']}")
+        print("\n  Before believing a mismatch, re-measure it. Brick distance,")
+        print("  angle and room light all move this reading.")
+    if not_applicable:
+        print("\n  Not testable — the sensor isn't specified to detect these:")
+        for r in not_applicable:
+            print(f"    {r['target']}: {r['note']}")
     print('=' * 74)
 
 
-def write_csv(results, path):
-    fields = ['target', 'app_code', 'expected_raw', 'raw', 'seen_app', 'verdict', 'note']
-    with open(path, 'w', newline='') as f:
+def write_csv(results, path, fresh=False):
+    '''Appends by default. Re-running used to silently clobber the previous
+    results, which is exactly what you don't want when the whole point is to
+    re-measure a colour that read badly — you want to compare the runs.
+    Each row carries a run timestamp so they stay separable. --fresh starts
+    a new file.'''
+    fields = ['run', 'target', 'app_code', 'expected_raw', 'raw', 'seen_app',
+              'verdict', 'note']
+    run_id = datetime.now().isoformat(timespec='seconds')
+    appending = os.path.exists(path) and not fresh
+    with open(path, 'a' if appending else 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
-        writer.writerows(results)
+        if not appending:
+            writer.writeheader()
+        for row in results:
+            writer.writerow({'run': run_id, **row})
+    return appending
 
 
 async def _main(args):
@@ -328,8 +373,8 @@ async def _main(args):
     if not results:
         return 1
     report(results)
-    write_csv(results, args.out)
-    print(f"\nWrote {args.out}")
+    appended = write_csv(results, args.out, args.fresh)
+    print(f"\n{'Appended to' if appended else 'Wrote'} {args.out}")
     return 0
 
 
@@ -345,7 +390,10 @@ def main():
     parser.add_argument('--only', default=None,
                         help='Test only these targets, by name (orange,black,teal) '
                              'or App code (4,8,10). Numbers never select black.')
-    parser.add_argument('--out', default='color_verify.csv', help='CSV output path')
+    parser.add_argument('--out', default='color_verify.csv',
+                        help='CSV output path; results are appended, not overwritten')
+    parser.add_argument('--fresh', action='store_true',
+                        help='Start a new results file instead of appending')
     args = parser.parse_args()
     try:
         return asyncio.run(_main(args))
