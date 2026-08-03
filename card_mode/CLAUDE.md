@@ -21,8 +21,7 @@ already stripped):
 | 2 | per-card token | not derived from anything visible |
 | 3–4 | card serial, little-endian | confirmed |
 | 5 | **sensor:** live detected colour (`0xff` = none) · **controller:** right stick | confirmed |
-| | — colour codes verified: No color, Red, Yellow, Green, Purple, White | measured |
-| | — still unverified: Blue, Teal (both read `0xff` — retest) | open |
+| | — all 8 sensor-detectable colour codes verified against real bricks | measured |
 | | — Magenta/Orange/Azure are **card-only**, sensor can't detect them | n/a |
 | 6 | **sensor:** always `0x00`, *not* reflection · **controller:** left stick | confirmed |
 | 7 | per-card token | not derived from anything visible |

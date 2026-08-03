@@ -155,8 +155,8 @@ observed against known targets:
 | — | *Black* | `0x00` | ❌ **reads `0xff`** | 11/11 packets — see below |
 | 1 | Red | `0x09` | ✅ | 11/11, and 24/24 in an earlier predicted test |
 | 2 | Yellow | `0x07` | ✅ | 9/9 packets |
-| 3 | Blue | `0x03` | ⬜ not yet | read `0xff` (nothing detected) — needs a retest |
-| 4 | Teal | `0x05` | ⬜ not yet | read `0xff` (nothing detected) — needs a retest |
+| 3 | Blue | `0x03` | ✅ | confirmed on a re-measure |
+| 4 | Teal | `0x05` | ✅ | confirmed on a re-measure |
 | 5 | Green | `0x06` | ✅ | 8/8, plus observed live earlier |
 | 6 | Purple | `0x02` | ✅ | observed live earlier; the sweep read RED, see below |
 | 7 | White | `0x0a` | ✅ | 7/7, and 26/26 in an earlier predicted test |
@@ -164,10 +164,11 @@ observed against known targets:
 | 9 | Orange | `0x08` | n/a | card-only colour, sensor can't detect it |
 | 10 | Azure | `0x04` | n/a | card-only colour, sensor can't detect it |
 
-**Six of the eight testable colors are confirmed.** Blue and teal both read
-`0xff` — the sensor detected nothing at all rather than the wrong color,
-which points at brick presentation rather than a wrong table entry. They
-need re-measuring, not rewriting.
+**All eight testable colors are confirmed.** Blue and teal read `0xff`
+on a first attempt — nothing detected rather than the wrong color — and
+came back correct on a re-measure. That pattern is worth remembering:
+`0xff` usually means the brick wasn't presented well, not that the table
+is wrong.
 
 **Magenta, orange and azure are not testable.** `SENSOR_DETECTABLE_COLORS`
 in `legoeducation/color_map.py` is `{RED, YELLOW, BLUE, TEAL, GREEN,
