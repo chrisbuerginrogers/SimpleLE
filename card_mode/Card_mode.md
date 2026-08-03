@@ -1,8 +1,12 @@
 # Card Mode — decoding LEGO card taps from BLE advertisements
 
-Working notes on how `card_mode/scan_advertising.py` reads a LEGO Education
+Working notes on how `scan_advertising.py` reads a LEGO Education
 card's **color** and **serial number** straight out of a device's BLE
 advertisement, with no GATT connection.
+
+This file carries the evidence behind every claim. `CLAUDE.md` in the same
+folder is the distilled version — the byte map, what's settled, and a
+"don't retry these" list — for picking the work back up quickly.
 
 Status:
 
@@ -11,7 +15,10 @@ Status:
 - Color sensor's live detected color at byte 5 — **confirmed by prediction**,
   readable passively with no GATT connection
 - Reflection is **not** broadcast — `reflection()` needs a connection
-- Bytes 2 and 7 are card-derived and **not a checksum** — likely more card ID
+- A card serial is **not unique** — the key is the (color, serial) pair
+- Bytes 2 and 7 are an **independent per-card token** — not a checksum, not
+  an ID extension, not derived from anything visible
+- Byte 8 is an **unidentified** slowly-varying analog value
 - L/R stick axes — the spurious readings on non-controllers are **fixed**;
   the value *encoding* is still unresolved, see
   [Open problem: L/R axes](#open-problem-lr-axes)
@@ -26,7 +33,7 @@ advertisement payload. Advertisements are passive — any scanner in range
 picks them up. So you can watch card taps live without pairing,
 connecting, or holding a session open.
 
-`card_mode/scan_advertising.py` is a live-refreshing table of every LEGO
+`scan_advertising.py` is a live-refreshing table of every LEGO
 advertisement in range, one row per device address, showing that device's
 latest decoded card plus the raw payload bytes it came from.
 
@@ -49,8 +56,9 @@ The **color byte moves**: index 2 in manufacturer data, index 1 in service
 data. That's the whole reason `_decode_card_bytes()` takes a `color_index`
 argument. Note this is *not* a clean one-byte shift of the whole
 structure — the serial stays at 3–4 either way, so byte 2 in the service
-data form is something else entirely (currently unidentified; observed
-values `0xf3` and `0xde` on two different devices).
+data form is something else entirely. It turned out to be half of a
+per-card token; see
+[Bytes 2 and 7](#bytes-2-and-7--an-independent-per-card-token).
 
 `decode_lego_card()` tries manufacturer data first, then falls back to
 FD02 service data.
@@ -113,13 +121,13 @@ device-derived ones:
 |---|---|---|
 | 0 | device type — `0x02` color sensor, `0x03` controller | confirmed |
 | 1 | card color, firmware code | confirmed |
-| 2 | card-derived, purpose unknown | see below |
+| 2 | per-card token, not derived from anything visible | see below |
 | 3–4 | card serial, little-endian | confirmed |
 | 5 | **color sensor**: detected color, firmware code (`0xff` = none) | confirmed |
 | 5–6 | **controller**: stick axes | position confirmed, encoding open |
 | 6 | **color sensor**: always `0x00` so far — *not* reflection | see below |
-| 7 | card-derived, likely more card ID | see below |
-| 8 | drifts downward slowly — battery? | hypothesis |
+| 7 | per-card token, same story as byte 2 | see below |
+| 8 | slowly-varying analog value, oscillates ±1 | unidentified |
 | 9–11 | change every packet — counters / CRC | confirmed |
 
 ### Byte 0 — device type
@@ -145,12 +153,15 @@ observed against known targets:
 |---|---|---|
 | `0xff` | NONE (−1) | nothing in front of the sensor |
 | `0x02` | PURPLE | resting on something purple |
+| `0x06` | GREEN | observed live, target not controlled |
 | `0x09` | RED | red brick at contact, 24/24 packets |
 | `0x0a` | WHITE | white brick at contact, 26/26 packets |
 
-Each was predicted before the measurement, and the controller in the same
-scans stayed unaffected. The remaining codes are assumed from
-`legoeducation/rpc_message.py` but not yet verified against real bricks.
+The RED and WHITE rows were predicted before the measurement, and the
+controller in the same scans stayed unaffected. The remaining codes are
+assumed from `legoeducation/rpc_message.py` but not yet verified against
+real bricks — `capture_colorsensor.py` walks the full set if you want them
+nailed down.
 
 ### Byte 6 on a color sensor — not reflection
 
@@ -187,7 +198,7 @@ Three collisions in twenty cards means this is normal, not a fluke —
 serial numbers are evidently allocated per colour.
 
 The identifying key for a card is the **(color, serial) pair**. Anything
-keyed on serial alone will silently collide — `card_mode/log_cards.py` had
+keyed on serial alone will silently collide — `log_cards.py` had
 exactly that bug, caught by its own consistency check.
 
 Worth checking what this means for `lelib`'s
@@ -203,8 +214,8 @@ deterministic per card — swapping RED#1133 for PURPLE#1126 on one sensor
 produced `f3`/`48`, exactly the values that card had shown on a different
 device earlier.
 
-Twenty cards were logged with `card_mode/log_cards.py` (raw data in
-`card_mode/cards.csv`). The conclusion from that sample: **b2 and b7 are not
+Twenty cards were logged with `log_cards.py` (raw data in
+`cards.csv`). The conclusion from that sample: **b2 and b7 are not
 derived from the visible card fields at all.** They behave like an
 independent per-card token.
 
@@ -249,7 +260,7 @@ devices are addressed by colour and serial, both of which decode cleanly.
 Cracking them would need either a much larger card sample or LEGO's own
 documentation, and the payoff is curiosity rather than capability.
 
-### Byte 8 — probably battery
+### Byte 8 — unidentified analog value
 
 Differs between two devices holding the same card (`86` vs `85`), and
 drifts downward over a session on a single device (`87 → 85 → 84 → 7f`).
@@ -275,13 +286,46 @@ fails, treat b8 as an unidentified slowly-varying analog value.
 
 | Script | Purpose |
 |---|---|
-| `card_mode/scan_advertising.py` | live table, for eyeballing |
-| `card_mode/adv_capture.py` | shared capture engine — discovery, prompting, timed segments, CSV |
-| `card_mode/capture_controller.py` | guided protocol for the controller |
-| `card_mode/capture_colorsensor.py` | guided protocol for the color sensor |
-| `card_mode/watch_service_data.py` | lock onto one card, log every byte change as it happens |
-| `card_mode/log_cards.py` | tap-through card logger — one row per (color, serial) |
-| `card_mode/analyze_payload.py` | per-byte differencing over a capture CSV |
+| `scan_advertising.py` | live table of everything in range, for eyeballing |
+| `watch_service_data.py` | lock onto one card, log every byte change |
+| `log_cards.py` | tap-through card logger — one row per (color, serial) |
+| `capture_controller.py` | guided capture protocol for the controller |
+| `capture_colorsensor.py` | guided capture protocol for the color sensor |
+| `adv_capture.py` | shared capture engine — discovery, prompting, timed segments, CSV |
+| `analyze_payload.py` | per-byte differencing over a capture CSV |
+| `simpletest.py` | hardcoded decoder for the original `data from controller` log |
+| `CLAUDE.md` | distilled findings + "don't retry these" list |
+
+Data files: `cards.csv` (20 logged cards) and `data from controller` (38
+controller packets, the original capture this all started from).
+
+### Watching one device
+
+`watch_service_data.py` locks onto a single card and prints an event log —
+one line per byte that moves, nothing while things are still. Every event
+leads with the full payload and puts carets under what changed:
+
+```
+11:52:06.153  02 09 de 6d 04 09 00 75 7e | 3c 22 9e
+                             ^^
+              b5  0xff -> 0x09   DETECTS NOCOLOR -> RED
+```
+
+The `|` marks where the churn bytes start. Bytes 9–11 are still printed
+but don't count as changes, otherwise every advertisement would be an
+event.
+
+```bash
+python watch_service_data.py                        # defaults to RED#1133
+python watch_service_data.py --bytes 5,6            # just the reading
+python watch_service_data.py --serial 1126 --color PURPLE
+python watch_service_data.py --every                # payload every packet
+```
+
+It matches on color **and** serial, because a bare serial is ambiguous —
+see [A card serial is not unique](#a-card-serial-is-not-unique).
+
+### Guided capture
 
 The capture scripts prompt you through a scripted sequence ("LEFT lever
 FULL forward, hold"), record every advertisement during each window, and
@@ -291,9 +335,9 @@ hands-off `baseline` segment, which is what separates payload bytes from
 counters and CRC.
 
 ```bash
-python card_mode/capture_controller.py --manual
-python card_mode/analyze_payload.py capture_controller.csv
-python card_mode/analyze_payload.py a.csv b.csv     # compare mode
+python capture_controller.py --manual
+python analyze_payload.py capture_controller.csv
+python analyze_payload.py a.csv b.csv     # compare mode
 ```
 
 Validated against the existing `data from controller` capture: the
@@ -301,7 +345,7 @@ analyzer independently classified b5/b6 as responsive, b9–b11 as
 counters/CRC, and rediscovered the deadzone (magnitudes jump 0 → 3,
 skipping 1 and 2).
 
-## Other things the script does
+## Other things scan_advertising.py does
 
 **LEGO-only filtering** (`is_lego()`) — by default only advertisements
 carrying LEGO's signature are shown: company ID `0x0397` in manufacturer
@@ -388,33 +432,36 @@ means packed nibbles.
       bytes ⇒ the controller is computing something receiver-specific.
 - [ ] **Byte vs. actual RPM** — log advertisements while measuring motor
       speed optically (striped wheel + color sensor at `set_update_rate(15)`,
-      reusing `tests/light_scope.py`). Linear ⇒ the byte is the speed
+      reusing `../tests/light_scope.py`). Linear ⇒ the byte is the speed
       command. Nonlinear ⇒ the motor applies its own curve. Optical
       avoids the connection conflict: the controller likely occupies the
       motor's only BLE connection slot.
 - [ ] **Sideways axes** — check whether the levers move on a second axis
       at all. A null result is still data.
-- [ ] **Bytes 7–8** — constant within a session but `2c 80` / `48 83` /
-      `75 87` across devices and sessions, all with bit 15 set, and
-      monotonically increasing once it's stripped (44, 840, 1909). Log 10
-      minutes untouched and see if they climb; if so they're an uptime
-      clock, not state, and the buttons are elsewhere.
-- [ ] **Byte 2** — constant per session (`db`, `f3`, `de`). Power-cycle and
-      see whether it persists (identity) or changes (session nonce).
+- [x] ~~**Bytes 7–8** — possibly a 16-bit uptime clock.~~ Wrong. They're
+      two unrelated things: b7 is part of the per-card token, and b8 is a
+      device-level analog value that oscillates and has risen as well as
+      fallen. Neither is a counter.
+- [x] ~~**Byte 2** — identity or session nonce?~~ Neither. It's card-derived
+      and stable across devices and power cycles, part of the same token
+      as b7.
+- [ ] **Buttons** — still unlocated. They aren't in b7/b8, and no payload
+      length change has been seen. `capture_controller.py` and
+      `capture_colorsensor.py` both include a `button_held` segment.
 
 Once the axes are actually pinned down, update both this file and the
 docstring on `decode_controller_axes()` in
-`card_mode/scan_advertising.py`.
+`scan_advertising.py`.
 
 ---
 
 ## Running it
 
 ```bash
-python card_mode/scan_advertising.py                      # LEGO devices only
-python card_mode/scan_advertising.py --name Move          # filter by name substring
-python card_mode/scan_advertising.py --all                # every BLE device in range
-python card_mode/scan_advertising.py --all --include-noisy
+python scan_advertising.py                      # LEGO devices only
+python scan_advertising.py --name Move          # filter by name substring
+python scan_advertising.py --all                # every BLE device in range
+python scan_advertising.py --all --include-noisy
 ```
 
 Ctrl+C to stop.
