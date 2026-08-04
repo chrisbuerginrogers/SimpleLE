@@ -103,15 +103,61 @@ def _signed_byte(b):
     return b - 256 if b >= 128 else b
 
 
+# Byte 0 of the FD02 service data identifies the kind of device. Observed
+# so far: 0x02 on a color sensor, 0x03 on a controller. NOT yet proven
+# unique to controllers — two distinct devices have been seen advertising
+# 0x03 at the same time, so this may name a class rather than a product.
+DEVICE_TYPE_COLOR_SENSOR = 0x02
+DEVICE_TYPE_CONTROLLER = 0x03
+
+
 def decode_controller_axes(service_data):
     '''FD02 service-data bytes 5 (right stick) and 6 (left stick), signed
-    8-bit, resting at 0. Inferred from a single capture session (push one
-    stick out and back, then the other, and match which byte spiked when)
-    — not documented by LEGO, so treat as a working hypothesis that may
-    need revisiting once we see full-deflection values.'''
+    8-bit, resting at 0.
+
+    Gated on the byte-0 device type, because without that gate this fires
+    on anything advertising >= 7 bytes of FD02 and invents axis readings
+    for devices that have no sticks — a color sensor was observed
+    reporting a spurious "R:-1" off a byte 5 that means something else
+    entirely on that hardware.
+
+    The axis *values* remain a working hypothesis. They come from a single
+    capture session (push one stick out and back, then the other, and
+    match which byte moved), where every observed magnitude was <= 16.
+    That leaves signed-byte and packed-4-bit encodings equally consistent
+    with the data — see Card_mode.md. Capture full deflection with
+    card_mode/capture_controller.py before trusting these numbers.
+    '''
     for uuid, payload in (service_data or {}).items():
-        if uuid.lower() == SERVICE_UUID_LOWER and len(payload) >= 7:
-            return f"L:{_signed_byte(payload[6]):+d} R:{_signed_byte(payload[5]):+d}"
+        if uuid.lower() != SERVICE_UUID_LOWER or len(payload) < 7:
+            continue
+        if payload[0] != DEVICE_TYPE_CONTROLLER:
+            return ''
+        return f"L:{_signed_byte(payload[6]):+d} R:{_signed_byte(payload[5]):+d}"
+    return ''
+
+
+def decode_sensor_color(service_data):
+    '''Byte 5 of a color sensor's FD02 service data is the color it is
+    currently looking at, as a raw *firmware* color code — so 0xff is
+    LEGO_COLOR_NONE (-1, nothing detected), not a signed-byte -1.
+
+    Confirmed by prediction: the byte read 0xff with nothing in front of
+    the sensor, 0x02 (firmware PURPLE) resting on something purple, then
+    0x09 (firmware RED) on 24 of 24 packets the moment a red brick was
+    held against it, while the controller in the same scan was unaffected.
+
+    This means a color sensor's reading is available passively from the
+    advertisement — no GATT connection, no pairing.
+    '''
+    for uuid, payload in (service_data or {}).items():
+        if uuid.lower() != SERVICE_UUID_LOWER or len(payload) < 6:
+            continue
+        if payload[0] != DEVICE_TYPE_COLOR_SENSOR:
+            return ''
+        firmware_color = _signed_byte(payload[5])
+        app_color = _firmware_to_app(firmware_color)
+        return LEGO_COLOR_NAME_MAP.get(app_color, str(app_color)).replace('LEGO_COLOR_', '')
     return ''
 
 
@@ -182,14 +228,17 @@ def make_callback(name_filter, include_noisy, lego_only, devices):
         svc = fmt_hex_map(adv.service_data, key_fmt=short_uuid)
         lego_card = decode_lego_card(adv.manufacturer_data, adv.service_data)
         ctrl_axes = decode_controller_axes(adv.service_data)
+        sensor_color = decode_sensor_color(adv.service_data)
 
         prev = devices.get(device.address)
         # Compare on the decoded fields when we have them — LEGO's trailing
         # bytes (beyond color+serial+axes) appear to rotate on every single
         # advertisement, so comparing the raw payload would mark '*' almost
         # permanently instead of only on a real card tap / stick movement.
-        if lego_card or ctrl_axes:
-            unchanged = prev and prev['lego_card'] == lego_card and prev['ctrl_axes'] == ctrl_axes
+        if lego_card or ctrl_axes or sensor_color:
+            unchanged = (prev and prev['lego_card'] == lego_card
+                         and prev['ctrl_axes'] == ctrl_axes
+                         and prev['sensor_color'] == sensor_color)
         else:
             unchanged = prev and prev['mfg_data'] == mfg and prev['service_data'] == svc
         changed_at = prev['changed_at'] if unchanged else now
@@ -200,6 +249,7 @@ def make_callback(name_filter, include_noisy, lego_only, devices):
             'rssi': adv.rssi,
             'lego_card': lego_card,
             'ctrl_axes': ctrl_axes,
+            'sensor_color': sensor_color,
             'mfg_data': mfg,
             'service_data': svc,
             'updated_at': now,
@@ -212,7 +262,7 @@ def make_callback(name_filter, include_noisy, lego_only, devices):
 
 def render_table(devices):
     now = time.monotonic()
-    headers = ['', 'Address', 'Name', 'RSSI', 'LEGO Card', 'L/R Axes', 'Mfg Data', 'Service Data', 'Age(s)', 'Seen(s)']
+    headers = ['', 'Address', 'Name', 'RSSI', 'LEGO Card', 'Detects', 'L/R Axes', 'Mfg Data', 'Service Data', 'Age(s)', 'Seen(s)']
     rows = []
     for addr, d in sorted(devices.items()):
         recently_changed = (now - d['changed_at']) < CHANGED_HIGHLIGHT_SECONDS
@@ -222,6 +272,7 @@ def render_table(devices):
             d['name'][:20],
             str(d['rssi']),
             d['lego_card'],
+            d['sensor_color'],
             d['ctrl_axes'],
             d['mfg_data'][:60],
             d['service_data'][:60],
