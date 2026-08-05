@@ -17,7 +17,10 @@ A thin Python wrapper around the `legoeducation` pip package. The goal is simple
   cannot transmit an advertisement, so commands go over USB serial to a MicroPython
   board (`card_mode/pico tests/pico_server.py` + `picolib.py`) which does the radio
   work. Only the subset a broadcast can express — no `spin`/`turn_left`/`move_steps`,
-  since those need feedback the beacon has no room for.
+  since those need feedback the beacon has no room for. Also the file-transfer
+  route to the board: `install()` (libraries), `install_main()` (a script as
+  `main.py`), `fetch_file()` (a file back off). Anything that talks to the board
+  stops what it was running, so `install_main`/`fetch_file` reboot it afterwards.
 - `projects/` — scripts that build something with lelib (e.g. `drive.py` — joystick tank-drive + live matplotlib color-sensor graph)
 - `tests/` — diagnostic/scratch scripts for exercising lelib or BLE hardware, not end-user builds
 - `card_mode/` — BLE advertisement reverse-engineering: decoding card taps, device
@@ -29,7 +32,9 @@ A thin Python wrapper around the `legoeducation` pip package. The goal is simple
   identified. Sub-folders:
   - `card_mode/examples/` — small single-purpose examples, split by where they run:
     `stick_*.py` on the M5StickS3 (can transmit), `mac_*.py` on the Mac (listens, or
-    drives a Stick over USB)
+    drives a Stick over USB). `stick_log_cards.py` is the odd one out: it is meant to
+    be installed as the Stick's `main.py` (`mac_fetch_cards.py --install`) so the
+    board harvests cards on its own, off USB.
   - `card_mode/pico tests/` — MicroPython for the board: `picolib.py` (broadcast),
     `lego_card.py` (RFID card decode), `stick_ui.py` (screen + beep),
     `pico_server.py` (serial command server)

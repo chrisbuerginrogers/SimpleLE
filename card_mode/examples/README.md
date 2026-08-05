@@ -36,6 +36,7 @@ screen in red and buzzes.
 | `stick_drive_known_card.py` | Card color and serial are typed into the file. Drives the motor straight away — nothing else needed. |
 | `stick_tap_to_drive.py` | Starts up, waits for a card tap on the RFID reader, then drives the motor belonging to *that* card. |
 | `stick_read_card.py` | Tap a card and see what the reader makes of it. Use this to fill in the numbers for the other two. |
+| `stick_log_cards.py` | Tap a stack of cards and log each one — RFID UID, color, serial and all twelve FD02 bytes — to a CSV on the Stick. Meant to be installed as `main.py` and carried around. |
 
 Copy the example you want to the Stick. Its libraries — `picolib.py`,
 `lego_card.py` and `stick_ui.py` — go over in one step from the Mac:
@@ -52,6 +53,7 @@ pico_lelib.install()          # puts the board libraries on the Stick
 | `mac_drive_known_card.py` | Same as the Stick version, but written on the Mac in lelib syntax and sent over USB to the Stick. |
 | `mac_run_on_stick.py` | Runs any `stick_*.py` **on the Stick** from here, with its `print()` output coming back to your terminal. Ctrl-C stops it on the board too. |
 | `mac_watch_card.py` | Watches everything broadcasting under one card — color sensor readings and joystick positions, live. No Stick needed. |
+| `mac_fetch_cards.py` | `--install` puts `stick_log_cards.py` on the Stick as `main.py`; with no arguments it copies the logged cards back to `../card_taps.csv`. |
 
 The quickest way to work on a Stick example is to leave it in this folder and
 run it from the Mac — no copying, no Thonny:

@@ -39,6 +39,17 @@ CARD_MAGIC = b'L3G0'
 FIRST_DATA_PAGE = 4
 
 
+def firmware_to_app(firmware_color):
+    '''Firmware color code -> App color code, or None if it is not a color.
+
+    The card's page 5 and the FD02 broadcast's byte 1 both carry the firmware
+    code, while everything user-facing (lelib, picolib, stick_ui) speaks App
+    codes. Convert before naming a color -- firmware 2 is purple, App 2 is
+    yellow, so skipping this yields plausible-looking wrong answers.
+    '''
+    return _FIRMWARE_TO_APP.get(firmware_color)
+
+
 class NotALegoCard(Exception):
     '''The tag read is genuinely not a LEGO connection card.'''
 

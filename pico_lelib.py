@@ -35,6 +35,16 @@ After install(), nothing else is needed -- connecting starts the server over
 the board's REPL each time. No main.py is written, so the board still does
 whatever it did before when you power it up on its own.
 
+Two extras for boards that should do something on their own:
+
+    pico_lelib.install_main('card_mode/examples/stick_log_cards.py')
+    pico_lelib.fetch_file('card_taps.csv', 'card_taps.csv')
+
+install_main() copies one script over as main.py, so it runs on power-up with
+no laptop attached; fetch_file() copies a file back off the board. A board with
+a main.py can still be driven from here -- connecting interrupts whatever is
+running first.
+
 ── What is here, and what cannot be ─────────────────────────────────────────
 The broadcast carries two joystick positions, each with seven steps, and
 nothing else. There is no acknowledgement and no feedback, so anything in
@@ -209,6 +219,23 @@ class PicoLink(object):
         self._serial.write(b'\r\x02')
         time.sleep(0.1)
 
+    def soft_reset(self):
+        '''Reboot the board, so anything installed as main.py runs again.
+
+        Talking to a board at all stops whatever it was running -- every
+        conversation here starts by interrupting it. On a board whose main.py
+        is doing a job, that would otherwise mean plugging it in to collect
+        its data quietly left it not doing that job any more.
+        '''
+        self._serial.write(b'\r\x03\x03')     # stop whatever is running
+        time.sleep(0.2)
+        self._serial.write(b'\r\x02')         # leave the raw REPL if we are in it
+        time.sleep(0.2)
+        self._serial.reset_input_buffer()
+        self._buf = b''
+        self._serial.write(b'\x04')           # Ctrl-D: soft reboot
+        time.sleep(0.5)
+
     # ── the JSON protocol ─────────────────────────────────────────────
     def _server_answers(self):
         '''True if pico_server.py is already running and speaking JSON.'''
@@ -244,6 +271,79 @@ class PicoLink(object):
         raise PicoNotReady(
             'The board at {} did not reply to {!r} in time.'.format(self.port, cmd))
 
+    # ── moving files ──────────────────────────────────────────────────
+    def _write_file(self, data, name):
+        '''Write bytes to a file on the board. Assumes a raw REPL is open.
+
+        The size is read back and checked, because a short write over serial
+        looks exactly like success otherwise -- the board would just run a
+        truncated file.
+        '''
+        self._exec_raw('f = open({!r}, "wb")'.format(name))
+        for i in range(0, len(data), 256):
+            self._exec_raw('f.write({!r})'.format(data[i:i + 256]))
+        self._exec_raw('f.close()')
+        out, err = self._exec_raw(
+            'import os; print(os.stat({!r})[6])'.format(name))
+        if err.strip():
+            raise PicoNotReady('Could not write {} to the board: {}'.format(
+                name, err.strip()))
+        written = int(out.strip())
+        if written != len(data):
+            raise PicoNotReady(
+                '{} copied badly: {} bytes on the board, {} expected.'.format(
+                    name, written, len(data)))
+        return written
+
+    def put_file(self, source_path, name=None):
+        '''Copy one file from the Mac to the board. Returns the bytes written.
+
+        name defaults to the file's own basename; pass it to land the file
+        under a different name on the board -- which is how a stick_*.py
+        example gets installed as main.py.
+        '''
+        if name is None:
+            name = os.path.basename(source_path)
+        with open(source_path, 'rb') as handle:
+            data = handle.read()
+        self._enter_raw_repl()
+        try:
+            return self._write_file(data, name)
+        finally:
+            self._exit_raw_repl()
+
+    def get_file(self, name, chunk=512, timeout=120.0):
+        '''Read a file off the board and return its bytes.
+
+        Comes back hex-encoded rather than raw: the raw REPL's own framing
+        uses control bytes, so a file containing one would end the transfer
+        early. Hex costs double the bytes on the wire and cannot do that.
+        '''
+        self._enter_raw_repl()
+        try:
+            out, err = self._exec_raw(
+                'import binascii\n'
+                'f = open({!r}, "rb")\n'
+                'while True:\n'
+                '    b = f.read({})\n'
+                '    if not b:\n'
+                '        break\n'
+                '    print(binascii.hexlify(b).decode())\n'
+                'f.close()\n'.format(name, chunk),
+                timeout=timeout)
+        finally:
+            self._exit_raw_repl()
+
+        if err.strip():
+            if 'ENOENT' in err or 'No such file' in err:
+                raise FileNotFoundError(
+                    'There is no {} on the board at {}. Nothing has been '
+                    'logged yet, or it was logged under another name.'.format(
+                        name, self.port))
+            raise PicoNotReady('Could not read {} off the board: {}'.format(
+                name, err.strip().splitlines()[-1]))
+        return bytes.fromhex(''.join(out.split()))
+
     # ── setup ─────────────────────────────────────────────────────────
     def install(self):
         '''Copy picolib.py and pico_server.py onto the board.'''
@@ -253,21 +353,7 @@ class PicoLink(object):
             source = os.path.join(_BOARD_SOURCE_DIR, name)
             with open(source, 'rb') as handle:
                 data = handle.read()
-            self._exec_raw('f = open({!r}, "wb")'.format(name))
-            for i in range(0, len(data), 256):
-                self._exec_raw('f.write({!r})'.format(data[i:i + 256]))
-            self._exec_raw('f.close()')
-            out, err = self._exec_raw(
-                'import os; print(os.stat({!r})[6])'.format(name))
-            if err.strip():
-                raise PicoNotReady('Could not write {} to the board: {}'.format(
-                    name, err.strip()))
-            written = int(out.strip())
-            if written != len(data):
-                raise PicoNotReady(
-                    '{} copied badly: {} bytes on the board, {} expected.'.format(
-                        name, written, len(data)))
-            copied.append((name, written))
+            copied.append((name, self._write_file(data, name)))
         self._exit_raw_repl()
         return copied
 
@@ -348,9 +434,15 @@ class PicoLink(object):
             self._serial.read(self._serial.in_waiting or 0)
             on_output('\n[stopped]\n')
 
-    def close(self):
+    def close(self, interrupt=True):
+        '''Close the serial link, stopping the server on the board first.
+
+        Pass interrupt=False after soft_reset(), so the board is left running
+        its main.py rather than being interrupted again on the way out.
+        '''
         try:
-            self._serial.write(b'\r\x03\x03')     # stop the server
+            if interrupt:
+                self._serial.write(b'\r\x03\x03')     # stop the server
             self._serial.close()
         except Exception:
             pass
@@ -390,6 +482,64 @@ def install(port=None):
     finally:
         link.close()
     print('Done. Now call pico_lelib.check_pico().')
+
+
+def install_main(source_path, port=None):
+    '''Copy one script to the board as main.py, so it runs on power-up.
+
+    Deliberately separate from install(): that one only puts libraries on the
+    board and leaves it behaving exactly as before, which is what you want on
+    a shared classroom board. This one changes what the board does when it is
+    switched on with nothing plugged into it.
+
+    Nothing else stops working -- pico_lelib interrupts whatever is running
+    before it starts the server -- so a board with a main.py can still be
+    driven from the Mac.
+    '''
+    close_link()
+    link = PicoLink(port=port, ensure_server=False)
+    print('Found {} at {}'.format(link.description, link.port))
+    restarted = False
+    try:
+        written = link.put_file(source_path, 'main.py')
+        link.soft_reset()
+        restarted = True
+    finally:
+        link.close(interrupt=not restarted)
+    print('  copied {} to main.py ({} bytes)'.format(
+        os.path.basename(source_path), written))
+    print('It is running now, and will run again whenever the board is '
+          'switched on.')
+    return written
+
+
+def fetch_file(name, local_path=None, port=None, restart=True):
+    '''Copy a file off the board. Returns its bytes; also writes local_path.
+
+    The board is rebooted afterwards by default, so a board that was busy
+    running its main.py goes back to running it -- reading a file off it
+    should not be what stops it.
+    '''
+    close_link()
+    link = PicoLink(port=port, ensure_server=False)
+    restarted = False
+    try:
+        data = link.get_file(name)
+    finally:
+        # In the finally so that a board with nothing to fetch yet is still
+        # left running -- that failure is the likeliest one, and stopping the
+        # logger over it would be exactly the wrong response.
+        if restart:
+            try:
+                link.soft_reset()
+                restarted = True
+            except Exception:
+                pass
+        link.close(interrupt=not restarted)
+    if local_path:
+        with open(local_path, 'wb') as handle:
+            handle.write(data)
+    return data
 
 
 def start_server(port=None):

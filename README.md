@@ -87,6 +87,13 @@ serial in the clear behind an ASCII `L3G0` marker. With an RFID reader on the
 board you can tap a card and have the code work out which motor to talk to —
 see [card_mode/examples/](card_mode/examples/).
 
+A board can also work on its own, off the USB cable:
+
+```python
+pico_lelib.install_main('card_mode/examples/stick_log_cards.py')  # runs on power-up
+pico_lelib.fetch_file('card_taps.csv', 'card_taps.csv')           # collect its data
+```
+
 ## Examples and the protocol
 
 - [card_mode/examples/](card_mode/examples/) — small single-purpose programs,

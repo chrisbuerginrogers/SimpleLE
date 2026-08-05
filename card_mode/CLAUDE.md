@@ -190,6 +190,23 @@ broadcast.** Don't copy one into the other without swapping.
 color and serial for free, but the tokens still have to be read off the air
 with `watch_service_data.py`.
 
+Confirmed by dumping **every** page, not just 4–7: pages 8 through 19 are all
+zeros on both cards, and page 16's `000000FF00050000` is identical on the two,
+so it is not per-card either. `0x7d`/`0x81` (orange) and `0xdb`/`0x2c` (purple)
+appear nowhere on the tag. There is no unread corner of the card left for them
+to be hiding in.
+
+```
+PURPLE #6055   page 0  04B1C8F5 82871F90 8A48FFFF 00000000
+               page 4  4C334730 000217A7 00000000 FFEEDDCC
+               page 8  all zeros through page 19
+ORANGE #7569   page 0  041C6EFE 82871F90 8A48FFFF 00000000
+               page 4  4C334730 00081D91 00000000 FFEEDDCC
+```
+
+Note page 0 carries the UID *with* its BCC check byte spliced in (`04B1C8`
+**`F5`** `82871F90`), so the seven UID bytes are not contiguous there.
+
 The open lead is whether they derive from the card's **RFID UID**, which is
 new information the earlier CRC hunts never had. Two cards now have both:
 
@@ -205,9 +222,19 @@ plus perhaps the color/serial.
 A CRC-8 sweep over both cards found 54 candidate parameter sets, which is
 **not evidence**: two samples × 8 bits is satisfied by chance by roughly any
 8-bit function. Do not chase any of those without a third and fourth card.
-The cheap next step is harvesting UID + tokens for more cards — tap each one
-on a controller, read the tokens off the air, and read its UID with
-`examples/stick_read_card.py`.
+The cheap next step is harvesting UID + tokens for more cards, and
+`examples/stick_log_cards.py` is the tool for it: installed as `main.py` it
+reads the card over RFID *and* listens for its FD02 beacon at the same time,
+writing one row per card with the UID, color, serial and all twelve bytes.
+Two taps per card — on a controller or color sensor, then on the Stick — and
+it skips cards already in the file. Collect it with
+`examples/mac_fetch_cards.py`; it lands in `card_taps.csv` next to
+`cards.csv`.
+
+**Both halves are needed and neither substitutes for the other.** The RFID
+read gives UID + color + serial; only a *sender's* broadcast gives b2/b7. A
+row is written only when both are in hand, so every UID in `card_taps.csv`
+comes with its tokens.
 
 Both pairs above were confirmed identical when read from a color sensor and
 a controller carrying the same card, which is what "per card, not per
@@ -292,6 +319,8 @@ Raw data for re-checking any of this is in `cards.csv` (20 cards) and
 | `watch_service_data.py` | lock onto one card, log every byte change with the full payload |
 | `verify_colors.py` | prompt through all 11 colors, verify byte 5 against the firmware table |
 | `log_cards.py` | tap-through card logger, keyed on (color, serial) |
+| `examples/stick_log_cards.py` | runs on the Stick as `main.py`: RFID UID + all 12 FD02 bytes per card, to `card_taps.csv` on the board |
+| `examples/mac_fetch_cards.py` | installs that logger, and fetches what it collected |
 | `capture_controller.py` | guided capture protocol for the controller |
 | `capture_colorsensor.py` | guided capture protocol for the color sensor |
 | `adv_capture.py` | shared capture engine — discovery, prompts, timed segments, CSV |

@@ -11,6 +11,8 @@ wrong. Written once here so the examples stay short and behave the same.
     ui.looking('TAP A CARD')
     ui.card(color, serial)             # fills the screen, beeps
     ui.status('DRIVING')               # a line under the card, color kept
+    ui.note('42 LOGGED')               # a second line under that
+    ui.saved()                         # two rising notes: written to a file
     ui.problem('NEED TOKENS', 'run watch_service_data')
 
 The screen deliberately keeps showing the last card after it is lifted off the
@@ -81,6 +83,7 @@ _DARK_TEXT_ON = (2, 7)
 
 BEEP_OK = (1760, 120)      # short and high: card read
 BEEP_BAD = (220, 250)      # low buzz: not a card we can use
+BEEP_SAVED = ((1568, 90), (2093, 140))   # two rising notes: written to the log
 
 
 def color_name(color):
@@ -133,6 +136,13 @@ class UI(object):
         '''A line under the card, keeping the card's color on screen.'''
         self._line(90, message, self.text)
 
+    def note(self, message):
+        '''A second, quieter line under status(). Same color background.
+
+        Thirteen characters fit at this scale; longer text is cut off.
+        '''
+        self._line(115, message, self.text)
+
     def problem(self, headline, detail='', beep=True):
         '''Something is wrong, on a black screen so it cannot be missed.'''
         self.background = BLACK
@@ -152,6 +162,16 @@ class UI(object):
     def buzz(self):
         '''Low note: not a card we can use.'''
         self.speaker.tone(*BEEP_BAD)
+
+    def saved(self):
+        '''Two rising notes: something was written to a file.
+
+        Deliberately different from beep(), which only means "a card was
+        read". When you are tapping a stack of cards, the two sounds are what
+        tell you a card actually landed in the log without watching the screen.
+        '''
+        for freq, ms in BEEP_SAVED:
+            self.speaker.tone(freq, ms)
 
     def close(self):
         self.speaker.deinit()
