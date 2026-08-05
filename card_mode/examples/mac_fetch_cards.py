@@ -10,9 +10,10 @@ Install the card logger on the Stick, and fetch the cards it has logged.
 installs stick_log_cards.py as main.py, so the Stick starts logging on its own
 whenever it is switched on -- no laptop, no cable, tap cards anywhere.
 
-With no arguments it just copies the log back, to card_mode/card_taps.csv next
-to the older cards.csv. The file on the Stick is left alone, so fetching twice
-is safe and the Stick keeps skipping cards it already has.
+With no arguments it just copies the log back, to card_mode/card_taps.csv,
+which it overwrites verbatim -- hand-edits there do not survive a fetch. The
+file on the Stick is left alone, so fetching twice is safe and the Stick keeps
+skipping cards it already has.
 
 Each row is one card: its RFID UID, its color and serial, and all twelve bytes
 of the FD02 service data broadcast under it. That pairing is what the open
@@ -33,8 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BOARD_LOG = 'card_taps.csv'
 LOGGER = os.path.join(HERE, 'stick_log_cards.py')
 
-#: Alongside cards.csv, which is the same kind of data from the earlier
-#: over-the-air-only harvest.
+#: Overwritten wholesale on every fetch -- the board's copy is the master.
 LOCAL_COPY = os.path.abspath(os.path.join(HERE, '..', BOARD_LOG))
 
 

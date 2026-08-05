@@ -128,7 +128,33 @@ device-derived ones:
 | 6 | **color sensor**: always `0x00` so far — *not* reflection | see below |
 | 7 | per-card token, same story as byte 2 | see below |
 | 8 | slowly-varying analog value, oscillates ±1 | unidentified |
-| 9–11 | change every packet — counters / CRC | confirmed |
+| 9–11 | sender uptime, 24-bit little-endian, 1/256 ms per tick | confirmed |
+
+### Bytes 9–11 — the sender's uptime clock
+
+Not a CRC and not opaque churn: read little-endian as a 24-bit value they
+count **1/256 of a millisecond per tick**, so bytes 10–11 on their own are
+a 16-bit millisecond clock that wraps every 65.5 seconds.
+
+The 39 taps in `card_taps.csv` each carry the Stick's own `uptime_ms`
+alongside the payload, which makes this directly checkable. **It is the
+sender's clock, so the taps must first be split by `b0`** — one logging
+session used a color sensor and a controller alternately, and comparing
+across the two makes the numbers look like noise. Split correctly, all
+**26 gaps** agree with the elapsed wall time to within 2%:
+
+```
+color sensor (b0=02), 13 gaps      controller (b0=03), 13 gaps
+  d16=5474  elapsed=5466  1.001      d16=3109  elapsed=3118  0.997
+  d16=3525  elapsed=3510  1.004      d16=2905  elapsed=2917  0.996
+  d16=3103  elapsed=3119  0.995      d16=6084  elapsed=6076  1.001
+  d16=17224 elapsed=17231 1.000      d16=23949 elapsed=23978 0.999
+```
+
+The long gaps matter most: 17.2 s and 24.0 s of wall time tracked to
+within 0.1%, which no counter of packets or CRC would do. Being the
+sender's clock it says nothing about the card, and two devices carrying
+the same card disagree — which is precisely how the split was found.
 
 ### Byte 0 — device type
 
@@ -274,8 +300,12 @@ deterministic per card — swapping RED#1133 for PURPLE#1126 on one sensor
 produced `f3`/`48`, exactly the values that card had shown on a different
 device earlier.
 
-Twenty cards were logged with `log_cards.py` (raw data in
-`cards.csv`). The conclusion from that sample: **b2 and b7 are not
+Sixteen cards were logged with `log_cards.py` into a `cards.csv` that has
+since been deleted, superseded by the larger `card_taps.csv` (recover it
+with `git show 2d9c572:card_mode/cards.csv` if a claim below needs
+re-checking; earlier revisions of this file said twenty cards, but it held
+sixteen rows from the commit that added it). The conclusion from
+that sample: **b2 and b7 are not
 derived from the visible card fields at all.** They behave like an
 independent per-card token.
 
@@ -303,22 +333,123 @@ selections, for b2 and b7 independently: zero hits over 20 cards.
 **Not a CRC-16 either.** Same search shape treating b2/b7 as the two
 halves of a 16-bit checksum — all 65536 polynomials × init × reflection
 combinations × several input orderings and both byte orders: zero hits
-over 20 cards. With 20 samples a chance hit is ~2⁻³²⁰, so a genuine CRC
+over 16 cards. With 16 samples a chance hit is ~2⁻²⁵⁶, so a genuine CRC
 would have been found.
 
-**They are unique per card.** All 20 `(b2, b7)` pairs are distinct; b2 and
-b7 each take 19 distinct values across 20 cards. Consistent with a
-random-per-card token.
+**They are unique per card.** All 16 `(b2, b7)` pairs are distinct, and so
+are all 16 values of b2 and all 16 of b7. Consistent with a random-per-card
+token. (Across the 39 in `card_taps.csv` all 39 pairs are still distinct,
+with 34 distinct values each — the collisions are in single bytes only,
+about what 39 draws from 256 should give.)
 
 > Retracted: an earlier note here claimed every observed b2 had both top
 > bits set, suggesting `b2 & 0xc0` was a constant marker. That held for
 > the first six cards and broke immediately on a wider sample — b2 values
 > include `53`, `09`, `04`, `1e`, `2b`. b2 is uniformly distributed.
 
+#### Settled at 39 cards: not a checksum of the color and serial
+
+`card_taps.csv` holds **39 cards with their RFID UIDs**. Before the older
+`cards.csv` was retired, 15 of its 16 cards overlapped these and every one
+agreed exactly — measured months apart, with a different tool. So b2/b7
+really are a deterministic function of the card; the question was only ever
+*of what*.
+
+**Device type is not one of the inputs.** Eleven of those repeat cards were
+measured on a **color sensor** (`b0=02`) one time and a **controller**
+(`b0=03`) the other, and every one gave byte-identical b2/b7:
+
+```
+fw1 #1127  dev2 27/e0 | dev3 27/e0      fw3 #1392  dev2 04/ab | dev3 04/ab
+fw1 #2306  dev2 31/49 | dev3 31/49      fw7 #2     dev2 53/27 | dev3 53/27
+fw2 #6081  dev2 ef/0a | dev3 ef/0a      fw8 #7583  dev2 de/a2 | dev3 de/a2
+```
+
+A checksum whose message includes the device type has to change when the
+device type changes. So byte 0 contributes nothing, which also means
+"checksum of color + serial + sensor type" reduces to "checksum of color +
+serial" — already dead by the GF(2) test below. Adding fields that are
+constant per card cannot rescue the idea; only a field that *varies between
+cards* can, and the UID is the only candidate left.
+
+**One test kills the whole checksum family.** Every CRC, of any width,
+polynomial, init value, reflection and xorout, and every XOR/parity or
+LFSR digest, is an **affine function over GF(2)** of the message bits. So
+instead of sweeping parameters, solve for affinity directly: build the
+39×25 system over GF(2) (24 message bits — color and 16-bit serial — plus a
+constant) and ask whether *any* affine function reproduces the target bit.
+
+    b7 ~ affine(color, serial)      bits 0-7:  no no no no no no no no
+    b2 ~ affine(color, serial)      bits 0-7:  no no no no no no no no
+    CONTROL: serial_lo ~ affine(…)  bits 0-7:  OK OK OK OK OK OK OK OK
+
+The control — a byte that *is* trivially linear in the message — passes on
+all eight bits, so the machinery works. b2 and b7 fail on all eight. That
+is not "no parameters found"; it is "no such function exists," and it
+supersedes the CRC-8 and CRC-16 sweeps above rather than repeating them.
+
+**Sum-style checksums fail too**, and they need a separate argument because
+carries make them non-linear over GF(2). Any checksum that adds the color
+and the serial into an accumulator is *separable*: the difference between
+two colors at the same serial must be the same at every serial. It isn't.
+Four serials are carried by more than one color — 1126 (yellow, orange,
+red), 1127 and 1128 (magenta, purple), and 1133 (five colors) — which gives
+two color pairs sampled at more than one serial:
+
+| pair | serials | Δb2 | Δb7 |
+|---|---|---|---|
+| magenta − purple | 1127, 1128, 1133 | `b3 55 ad` | `48 c4 7e` |
+| orange − red | 1126, 1133 | `88 75` | `50 35` |
+
+Both scatter. Serial 1133 alone exists in five colors and gives five
+unrelated pairs (`f2/42`, `45/c4`, `e6/ae`, `53/aa`, `de/75`).
+
+The magenta−purple row is the load-bearing one: three serials, three
+different deltas, so no additive scheme can hold.
+
+**What is still open.** b2/b7 could be a digest over a *larger* message —
+one including the RFID UID, or a registration number we never see. That
+reading survives everything above, and the same GF(2) test cannot decide
+it yet: 39 UID-bearing cards against 81 unknowns is underdetermined, so it
+fits trivially and means nothing. It becomes decisive at roughly **90
+cards logged with UIDs** — `examples/stick_log_cards.py` collects exactly
+the right row, so this is patience, not cleverness.
+
 **Recommendation: stop here.** Nothing in SimpleLE needs these bytes —
 devices are addressed by color and serial, both of which decode cleanly.
 Cracking them would need either a much larger card sample or LEGO's own
 documentation, and the payoff is curiosity rather than capability.
+
+### The symbol printed on a card is not in the broadcast
+
+Cards of different colors can carry the same printed symbol: green #1133
+matches every purple card, and teal and magenta share it too. Nothing in
+the twelve bytes reflects that.
+
+`b1` is the beacon's only color-dependent field, and it is exactly the
+color — green broadcasts `06`, every purple broadcasts `02`. b2/b7 are
+per-card, and the twelve purple cards logged hold twelve different values
+of each. The card's own memory has nothing either: pages 8–19 read as
+zeros and page 5 carries only the color and serial. So a device cannot
+tell "same symbol" from the air, and neither can we.
+
+What *does* line up is the **firmware color numbering**. Sorted by
+firmware code the colors pair off, and the two pairs in the observed
+symbol group are alternate ones:
+
+| fw | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| color | magenta | purple | blue | azure | teal | green | yellow | orange | red | — |
+| symbol | A | A | ? | ? | A | A | ? | ? | ? | ? |
+
+So the codes are allocated `(1,2) (3,4) (5,6) (7,8) (9,10)` and a pair
+shares a symbol. If the alternation continues, red and firmware-10 carry
+symbol A as well.
+
+> This is a pattern fitted to four data points, which is the exact shape of
+> the `b2 & 0xc0` marker that held for six cards and broke on twenty. It is
+> also free to falsify: **look at a red card.** Symbol A confirms the
+> period-4 reading; anything else means the pairing stops at pairs.
 
 ### Byte 8 — unidentified analog value
 
@@ -375,7 +506,7 @@ broadcast.** Copying one into the other without swapping gives a
 plausible-looking wrong number.
 
 **b2/b7 are not on the card.** Nothing in the pages resembles them, and
-they differ per card across all 16 cards in `cards.csv`, so they are not a
+they differ per card across all 39 cards in `card_taps.csv`, so they are not a
 constant hiding in the filler. A tap gets you color and serial for free;
 the tokens still have to come off the air.
 
@@ -425,8 +556,25 @@ checked off-hardware; `read_card()` needs the reader.
 | `simpletest.py` | hardcoded decoder for the original `data from controller` log |
 | `CLAUDE.md` | distilled findings + "don't retry these" list |
 
-Data files: `cards.csv` (20 logged cards) and `data from controller` (38
-controller packets, the original capture this all started from).
+Data files: `card_taps.csv` (39 cards with their RFID UIDs) and `data from
+controller` (38 controller packets, the original capture this all started
+from).
+
+The older `cards.csv` (16 cards, no UIDs, written by `log_cards.py`) has
+been **deleted** — `card_taps.csv` covers 15 of its 16 and carries the UID
+as well. The one card lost is PURPLE #1126 (`b2=f3 b7=48`), which was the
+second sample in the purple−orange and purple−red separability rows; those
+rows are gone from the table above, and magenta−purple across three serials
+carries the argument on its own. Retrieve the whole file from git if it is
+ever wanted again:
+
+```bash
+git show 2d9c572:card_mode/cards.csv
+```
+
+Note `mac_fetch_cards.py` overwrites `card_taps.csv` verbatim from the
+board, so hand-pasted rows do not survive a fetch — to restore that card,
+re-tap it and let the Stick log it.
 
 ### Watching one device
 

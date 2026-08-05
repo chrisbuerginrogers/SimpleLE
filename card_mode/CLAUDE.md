@@ -35,7 +35,7 @@ stripped).
 | 6 | **sensor:** always `0x00`, *not* reflection · **controller:** LEFT stick | confirmed |
 | 7 | per-card token — **motor validates it** | required, algorithm not cracked |
 | 8 | slowly-varying, dithers ±1 — counter tail or an analog value | unidentified |
-| 9–11 | counters / CRC, change every packet | confirmed |
+| 9–11 | sender uptime: 24-bit little-endian, 1/256 ms per tick (so 10–11 alone = a 16-bit millisecond clock, wrapping every 65.5 s) | confirmed |
 
 **Group address = card color (byte 1) + serial (bytes 3–4).** A brick
 only obeys broadcasts matching its own card. You don't need the physical
@@ -72,6 +72,17 @@ yields the same pair on any device. A beacon with the correct serial but
 wrong b2/b7 is **ignored by the motor** (confirmed by spoofing). To
 impersonate a card you must use its real b2/b7 — read them off any device
 already carrying that card.
+
+**Neither is a checksum of the card's color and serial.** Settled over 40
+cards: b2 and b7 are not *any* GF(2)-affine function of those 24 message
+bits, on any output bit, which rules out every CRC (any width, polynomial,
+init, reflection, xorout) and every XOR/parity digest in one shot. Sum-style
+checksums die separately — see `Card_mode.md`. Don't re-run a CRC sweep.
+
+**Nothing in the beacon carries a card's printed symbol.** `b1` is the only
+color-dependent field and it differs per color, so cards that share a symbol
+across colors (green/purple/teal/magenta) share no byte. The symbol tracks
+the **firmware color code's pairing** instead — see `Card_mode.md`.
 
 Manufacturer data (company ID `0x0397`) is a **different layout** —
 `[group, device, color, serial_lo, serial_hi]`, with the color at index
@@ -185,8 +196,8 @@ off-hardware, `read_card()` needs the reader.
 **The serial is big-endian on the card and little-endian in the FD02
 broadcast.** Don't copy one into the other without swapping.
 
-**b2/b7 are NOT on the card.** They differ per card across all 16 cards in
-`cards.csv`, and nothing in the pages resembles them — so a tap gets you
+**b2/b7 are NOT on the card.** They differ per card across all 39 cards in
+`card_taps.csv`, and nothing in the pages resembles them — so a tap gets you
 color and serial for free, but the tokens still have to be read off the air
 with `watch_service_data.py`.
 
@@ -228,8 +239,8 @@ reads the card over RFID *and* listens for its FD02 beacon at the same time,
 writing one row per card with the UID, color, serial and all twelve bytes.
 Two taps per card — on a controller or color sensor, then on the Stick — and
 it skips cards already in the file. Collect it with
-`examples/mac_fetch_cards.py`; it lands in `card_taps.csv` next to
-`cards.csv`.
+`examples/mac_fetch_cards.py`; it lands in `card_taps.csv`, **overwriting it
+verbatim** — hand-edits to that file do not survive a fetch.
 
 **Both halves are needed and neither substitutes for the other.** The RFID
 read gives UID + color + serial; only a *sender's* broadcast gives b2/b7. A
@@ -270,29 +281,37 @@ made it expensive.
 | byte 0 = message type | it's the device type; a capture locked to one address sees it constant |
 | bytes 5–6 pack four 4-bit axes | there are two sticks; the motor reads one low nibble per byte |
 
-Raw data for re-checking any of this is in `cards.csv` (20 cards),
-`card_taps.csv` (28 cards **with their RFID UIDs**, harvested with
-`examples/stick_log_cards.py`) and `data from controller` (38 controller
-packets).
+Raw data for re-checking any of this is in `card_taps.csv` (39 cards **with
+their RFID UIDs**, harvested with `examples/stick_log_cards.py`) and `data
+from controller` (38 controller packets). The older `cards.csv` (16 cards,
+no UIDs) has been deleted — `card_taps.csv` superseded 15 of its 16, and the
+odd one out, PURPLE #1126, was judged not worth keeping a file for. It is
+still in git: `git show 2d9c572:card_mode/cards.csv`.
 
 `card_taps.csv` is the one to attack the hash with — it is the only file
-pairing a card's UID with its tokens. It cross-checks clean: 10 of its cards
-also appear in `cards.csv` and all 10 agree on b2 and b7 exactly, captured
-months apart with a different tool. Its 14 color-sensor and 14 controller rows
-also re-confirm the byte map on data it was not derived from (`b5` = `0xff`
-or a detected color for the sensor, stick position for the controller; `b6`
-always `0`).
+pairing a card's UID with its tokens. It cross-checked clean against
+`cards.csv` before that file went: all 15 shared cards agreed on b2 and b7
+exactly, captured months apart with a different tool, and **eleven of those
+15 were read on the other device type**, proving b2/b7 do not depend on byte
+0. Its 17 color-sensor and 22 controller rows also re-confirm the byte map
+on data it was not derived from (`b5` = `0xff` or a detected color for the
+sensor, stick position for the controller; `b6` always `0`).
 
-**b2 looks like a hash, not a field.** 27 distinct values across 28 cards,
-spread 4..251 over 14 of the 16 high nibbles, with 1 colliding pair where
-random 8-bit values predict 1.5. Anything proposing it is a small
+**b2 looks like a hash, not a field.** 34 distinct values across 39 cards,
+spread 4..251 over 14 of the 16 high nibbles, with 5 collisions where
+random 8-bit values predict 2.8. Anything proposing it is a small
 enumeration has to explain that spread first.
 
 ## Open questions
 
-1. **The b2/b7 hash algorithm.** Not a standard CRC-8/16 or Fletcher-16
-   over color+serial. Until it's cracked, spoofing requires harvesting
-   the real bytes off a device carrying the card.
+1. **The b2/b7 hash algorithm.** Settled negatives, don't re-test: it is
+   not *any* GF(2)-affine function of color+serial (so no CRC of any
+   parameters, no XOR/parity digest), not additively separable in color and
+   serial (so no sum/Fletcher-style checksum), and not a function of the
+   device type. Only a per-card input we can't see — the RFID UID is the
+   candidate — could still make it a checksum; deciding that needs about
+   **90 UID-bearing cards**, versus 39 today. Until it's cracked, spoofing
+   requires harvesting the real bytes off a device carrying the card.
 2. **Byte 8.** Slowly varying, dithers ±1, has both risen and fallen. It
    is either the slow tail of the 8–11 counter block or a genuine analog
    value (battery and temperature both fit). The two documents disagreed
