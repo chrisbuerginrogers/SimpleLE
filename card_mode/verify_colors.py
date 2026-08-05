@@ -1,8 +1,8 @@
 '''
-Walk every LEGO colour past the color sensor and verify what byte 5 of the
+Walk every LEGO color past the color sensor and verify what byte 5 of the
 FD02 service data actually reports for each one.
 
-Byte 5 is the sensor's live detected colour, readable straight from the
+Byte 5 is the sensor's live detected color, readable straight from the
 advertisement with no GATT connection (see Card_mode.md). Only five values
 have actually been observed against a known target — NONE, PURPLE, GREEN,
 RED and WHITE. Every other code in the table is assumed from
@@ -12,7 +12,7 @@ them.
 There are two numbering schemes in play and this script deliberately keeps
 them apart:
 
-  - the byte on the wire is a **firmware** colour code
+  - the byte on the wire is a **firmware** color code
     (NONE=-1, BLACK=0, MAGENTA=1, PURPLE=2, BLUE=3, AZURE=4, TURQUOISE=5,
      GREEN=6, YELLOW=7, ORANGE=8, RED=9, WHITE=10)
   - what `lelib.colorSensor.detect_color()` hands back is the **App**
@@ -23,7 +23,7 @@ They collide confusingly — App 2 is Yellow, firmware 2 is Purple. So the
 raw byte is recorded alongside the translated App code, which means this
 verifies `_firmware_to_app()` itself rather than trusting it.
 
-BLACK is tested too even though the App has no such colour: firmware 0 is
+BLACK is tested too even though the App has no such color: firmware 0 is
 BLACK and translates to App "No color". So a black brick and an empty
 sensor both end up as No color, and the only way to tell them apart is the
 raw byte. Those two targets are therefore checked strictly against the
@@ -33,7 +33,7 @@ Usage:
     python verify_colors.py                       # everything
     python verify_colors.py --only orange,black,teal
     python verify_colors.py --only 4,8,10         # App codes also work
-    python verify_colors.py --settle 4            # sample longer per colour
+    python verify_colors.py --settle 4            # sample longer per color
 
 For each target it prompts, waits for Enter, then samples for a couple of
 seconds and takes the most common byte 5 — a single advertisement can land
@@ -41,11 +41,11 @@ mid-transition, so the modal value over a window is steadier than one
 reading. Anything that doesn't come back clean offers an immediate
 re-measure, so a fumbled brick doesn't cost you a rerun.
 
-Press 's' then Enter to skip a colour you don't have a brick for; a
+Press 's' then Enter to skip a color you don't have a brick for; a
 skipped row is honest, a guessed one isn't.
 
 Hold the brick flat against the sensor face and keep the distance the same
-across colours.
+across colors.
 '''
 
 import argparse
@@ -77,8 +77,8 @@ COLOR_BYTE = 5
 #                two targets share an App code (No color and Black both map
 #                to App 0, so the translation can't tell them apart).
 # hint         — extra guidance when the name alone is ambiguous
-# detectable   — whether the sensor is *specified* to detect this colour at
-#                all. MAGENTA, ORANGE and AZURE are card-only colours; asking
+# detectable   — whether the sensor is *specified* to detect this color at
+#                all. MAGENTA, ORANGE and AZURE are card-only colors; asking
 #                the sensor for them and calling the result a mismatch tests
 #                nothing.
 Target = namedtuple('Target',
@@ -125,7 +125,7 @@ def select_targets(targets, only):
     '''--only accepts names (orange,black,teal) or App codes (4,8,10).
     Numbers never select BLACK, since it has no App code of its own.
 
-    With no --only, the undetectable card-only colours are left out: the
+    With no --only, the undetectable card-only colors are left out: the
     sensor can't report them, so including them by default just manufactures
     failures. Naming one explicitly still runs it.'''
     if not only:
@@ -231,11 +231,11 @@ def verdict_for(target, samples):
         return raw, seen_app, 'ok', note
 
     if not target.detectable:
-        # The sensor isn't specified to detect this colour, so a "wrong"
+        # The sensor isn't specified to detect this color, so a "wrong"
         # answer says nothing about the decode table. Reporting it as a
         # mismatch would be measuring the wrong thing.
         return raw, seen_app, 'n/a', (
-            f"card-only colour, not in SENSOR_DETECTABLE_COLORS — sensor "
+            f"card-only color, not in SENSOR_DETECTABLE_COLORS — sensor "
             f"read {app_name(seen_app)}. {stability}")
 
     return raw, seen_app, 'MISMATCH', f"read {app_name(seen_app)} — {stability}"
@@ -278,7 +278,7 @@ async def run(sampler, targets, settle):
         await asyncio.sleep(0.3)
         waited += 0.3
         if abs(waited - 8.0) < 0.15:
-            print("  ...still nothing. This needs a colour sensor specifically "
+            print("  ...still nothing. This needs a color sensor specifically "
                   "(device type 0x02);\n  a controller won't do. Is it powered "
                   "on and in range?")
     print(f"Locked on {sampler.card} at {sampler.address}\n")
@@ -290,7 +290,7 @@ async def run(sampler, targets, settle):
         expected_text = (f"expect byte 0x{target.expected_raw:02x}"
                          if target.expected_raw is not None else '')
         if not target.detectable:
-            expected_text += ("   [card-only colour — the sensor isn't "
+            expected_text += ("   [card-only color — the sensor isn't "
                               "specified to detect this]")
         answer = await _ainput(f"  {label}\n       {expected_text}\n"
                                f"       Enter to measure > ")
@@ -337,7 +337,7 @@ def report(results):
 def write_csv(results, path, fresh=False):
     '''Appends by default. Re-running used to silently clobber the previous
     results, which is exactly what you don't want when the whole point is to
-    re-measure a colour that read badly — you want to compare the runs.
+    re-measure a color that read badly — you want to compare the runs.
     Each row carries a run timestamp so they stay separable. --fresh starts
     a new file.'''
     fields = ['run', 'target', 'app_code', 'expected_raw', 'raw', 'seen_app',
@@ -356,7 +356,7 @@ def write_csv(results, path, fresh=False):
 async def _main(args):
     targets, unknown = select_targets(build_targets(), args.only)
     if unknown:
-        print(f"Don't know these colours: {', '.join(unknown)}")
+        print(f"Don't know these colors: {', '.join(unknown)}")
         print(f"Valid names: {', '.join(t.key for t in build_targets())}")
         return 1
     if not targets:
@@ -382,11 +382,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--settle', type=float, default=DEFAULT_SETTLE,
-                        help=f'Seconds to sample per colour (default {DEFAULT_SETTLE})')
+                        help=f'Seconds to sample per color (default {DEFAULT_SETTLE})')
     parser.add_argument('--serial', type=int, default=None,
                         help='Only use the sensor carrying this card serial')
     parser.add_argument('--color', default=None,
-                        help='Only use the sensor carrying a card of this colour')
+                        help='Only use the sensor carrying a card of this color')
     parser.add_argument('--only', default=None,
                         help='Test only these targets, by name (orange,black,teal) '
                              'or App code (4,8,10). Numbers never select black.')

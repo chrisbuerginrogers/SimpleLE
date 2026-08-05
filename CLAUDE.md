@@ -4,15 +4,35 @@
 A thin Python wrapper around the `legoeducation` pip package. The goal is simpler method names and automatic Bluetooth reconnect logic for classroom use with LEGO Education hardware.
 
 ## Key files
-- `lelib.py` — the library (four classes: `singleMotor`, `doubleMotor`, `controller`, `colorSensor`)
+- `lelib.py` — the library (four classes: `singleMotor`, `doubleMotor`, `controller`,
+  `colorSensor`). **Keep it to GATT-connected work only.** Anything addressed by card
+  rather than by a connected object belongs in `cardlib.py`, deliberately, so the
+  simple LEGO library doesn't get mixed up with the broadcast protocol.
 - `lelib.md` — API reference; keep in sync with `lelib.py` whenever methods change
+- `cardlib.py` — connectionless: `find_cards()`, `read_sensor()`, `set_speed()`. Named by
+  card, no pairing, doesn't consume a device's one connection slot. Imports `lelib` for
+  the motor classes `set_speed()` needs; the dependency runs one way only.
+- `cardlib.md` — its API reference
+- `pico_lelib.py` — same syntax as lelib, but drives motors by BLE *broadcast*. macOS
+  cannot transmit an advertisement, so commands go over USB serial to a MicroPython
+  board (`card_mode/pico tests/pico_server.py` + `picolib.py`) which does the radio
+  work. Only the subset a broadcast can express — no `spin`/`turn_left`/`move_steps`,
+  since those need feedback the beacon has no room for.
 - `projects/` — scripts that build something with lelib (e.g. `drive.py` — joystick tank-drive + live matplotlib color-sensor graph)
 - `tests/` — diagnostic/scratch scripts for exercising lelib or BLE hardware, not end-user builds
 - `card_mode/` — BLE advertisement reverse-engineering: decoding card taps, device
   type, sensor readings and controller sticks straight from the advertisement, with
-  no GATT connection. Self-contained (the scripts import each other by bare module
-  name, so run them from inside the folder). `Card_mode.md` is the findings
-  writeup — keep it updated as bytes get identified.
+  no GATT connection, plus the transmit side that drives motors by broadcast.
+  Self-contained (the scripts import each other by bare module name, so run them
+  from inside the folder). `Card_mode.md` is the findings writeup and
+  `card_mode/CLAUDE.md` the distilled version — keep both updated as bytes get
+  identified. Sub-folders:
+  - `card_mode/examples/` — small single-purpose examples, split by where they run:
+    `stick_*.py` on the M5StickS3 (can transmit), `mac_*.py` on the Mac (listens, or
+    drives a Stick over USB)
+  - `card_mode/pico tests/` — MicroPython for the board: `picolib.py` (broadcast),
+    `lego_card.py` (RFID card decode), `stick_ui.py` (screen + beep),
+    `pico_server.py` (serial command server)
 - `README.md` — user-facing intro and quick-start
 
 ## Conventions

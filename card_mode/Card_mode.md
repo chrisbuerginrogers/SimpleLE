@@ -160,9 +160,9 @@ observed against known targets:
 | 5 | Green | `0x06` | ✅ | 8/8, plus observed live earlier |
 | 6 | Purple | `0x02` | ✅ | observed live earlier; the sweep read RED, see below |
 | 7 | White | `0x0a` | ✅ | 7/7, and 26/26 in an earlier predicted test |
-| 8 | Magenta | `0x01` | n/a | card-only colour, sensor can't detect it |
-| 9 | Orange | `0x08` | n/a | card-only colour, sensor can't detect it |
-| 10 | Azure | `0x04` | n/a | card-only colour, sensor can't detect it |
+| 8 | Magenta | `0x01` | n/a | card-only color, sensor can't detect it |
+| 9 | Orange | `0x08` | n/a | card-only color, sensor can't detect it |
+| 10 | Azure | `0x04` | n/a | card-only color, sensor can't detect it |
 
 **All eight testable colors are confirmed.** Blue and teal read `0xff`
 on a first attempt — nothing detected rather than the wrong color — and
@@ -210,7 +210,7 @@ python verify_colors.py --only 4,8,10                # App codes work too
 Anything that doesn't come back clean offers an immediate re-measure, so
 a fumbled brick doesn't cost a whole rerun.
 
-**Black is tested even though the App has no BLACK colour.** Firmware `0`
+**Black is tested even though the App has no BLACK color.** Firmware `0`
 is BLACK and translates to App `No color`, so a black brick and an empty
 sensor both arrive as `No color` and *only the raw byte separates them*.
 Those two targets are therefore checked strictly against the wire byte
@@ -255,7 +255,7 @@ RED#1126      b1=09  b2=f1  b3,b4=66 04  b7=35
 ```
 
 Three collisions in twenty cards means this is normal, not a fluke —
-serial numbers are evidently allocated per colour.
+serial numbers are evidently allocated per color.
 
 The identifying key for a card is the **(color, serial) pair**. Anything
 keyed on serial alone will silently collide — `log_cards.py` had
@@ -287,8 +287,8 @@ ORANGE#7552 → `c8`/`a0`. A one-step serial change scrambles both bytes,
 which kills the "extra low bytes of a longer ID" reading they first
 suggested.
 
-**Colour is an input, if it's a function at all.** Three cards share
-serial 1126 and differ only in colour, producing three different pairs:
+**Color is an input, if it's a function at all.** Three cards share
+serial 1126 and differ only in color, producing three different pairs:
 
 | Card | b1 | b2 | b7 |
 |---|---|---|---|
@@ -316,7 +316,7 @@ random-per-card token.
 > include `53`, `09`, `04`, `1e`, `2b`. b2 is uniformly distributed.
 
 **Recommendation: stop here.** Nothing in SimpleLE needs these bytes —
-devices are addressed by colour and serial, both of which decode cleanly.
+devices are addressed by color and serial, both of which decode cleanly.
 Cracking them would need either a much larger card sample or LEGO's own
 documentation, and the payoff is curiosity rather than capability.
 
@@ -341,6 +341,74 @@ established. A temperature reading would behave similarly.
 Test to confirm: compare a freshly charged device against a nearly flat
 one, and check whether the oscillation band tracks the level. If that
 fails, treat b8 as an unidentified slowly-varying analog value.
+
+## The card itself, read over RFID
+
+The connection cards turn out to be plain **NTAG/Ultralight** tags (SAK
+`0x00`, 7-byte UID), and they store the color and serial in the clear.
+Read with an M5Stack RFID2 Unit (WS1850S) on an M5StickS3:
+
+```
+UID  04B1C882871F90
+page 0   04B1C8 F5 82871F90 8A 48 FFFF 0000     standard NTAG: UID, BCC, lock
+page 4   4C334730 000217A7 00000000 FFEEDDCC
+         "L3G0"      ^^ ^^^^-- 0x17A7 = 6055
+                     +-------- 0x02 = firmware PURPLE
+page 16  000000FF 00050000 ...
+```
+
+So the layout from page 4 is:
+
+| Page | Bytes | Meaning |
+|---|---|---|
+| 4 | `4C 33 47 30` | ASCII `L3G0` — magic marker, tells a LEGO card from any other NTAG |
+| 5 | `00 <color> <serial hi> <lo>` | color is the **firmware** code; serial is **big-endian** |
+| 6 | `00 00 00 00` | zero |
+| 7 | `FF EE DD CC` | fixed filler |
+
+Confirmed on two cards of different colors: purple `000217A7` → 6055, and
+orange `00081D91` → firmware `0x08` (orange), 7569. Both match what is
+printed on the card.
+
+**The serial is big-endian on the card and little-endian in the FD02
+broadcast.** Copying one into the other without swapping gives a
+plausible-looking wrong number.
+
+**b2/b7 are not on the card.** Nothing in the pages resembles them, and
+they differ per card across all 16 cards in `cards.csv`, so they are not a
+constant hiding in the filler. A tap gets you color and serial for free;
+the tokens still have to come off the air.
+
+This does hand the b2/b7 hunt something it never had: the card's **RFID
+UID**. Every earlier attempt tried to derive the tokens from color and
+serial alone. Two cards now have UID *and* tokens together:
+
+| Card | RFID UID | b2 | b7 |
+|---|---|---|---|
+| PURPLE #6055 | `04 B1 C8 82 87 1F 90` | `0xdb` | `0x2c` |
+| ORANGE #7569 | `04 1C 6E 82 87 1F 90` | `0x7d` | `0x81` |
+
+The UIDs differ **only at bytes 1–2**, which narrows the search a lot.
+
+A CRC-8 sweep over both cards (all 256 polynomials × 256 inits ×
+reflections × xorouts, over several input selections) produced 54
+candidate parameter sets. That is **not a result**: two samples of 8 bits
+each are fitted by chance by roughly any 8-bit function, so every one of
+those 54 is almost certainly coincidence. Chasing them without more data
+would be the same mistake as the `b2 & 0xc0` marker that held for 6 cards
+and broke on 20.
+
+The cheap next step is more data, not more search: for each card, tap it
+on a controller and read b2/b7 off the air with `watch_service_data.py`,
+then read its UID with `examples/stick_read_card.py`. Four or five cards
+would make a CRC hit meaningful.
+
+Both pairs above read identically from a color sensor and from a
+controller carrying the same card — the "per card, not per device"
+property, now confirmed directly rather than inferred.
+
+Decoder: `pico tests/lego_card.py`. `decode_pages()` is pure and can be
+checked off-hardware; `read_card()` needs the reader.
 
 ## Tooling
 

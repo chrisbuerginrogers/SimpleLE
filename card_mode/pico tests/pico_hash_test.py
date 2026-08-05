@@ -1,11 +1,11 @@
 '''
 Card-hash validation test (Pico W / Pico 2 W, MicroPython).
 
-Broadcasts a controller beacon with the CORRECT card colour + serial but the
+Broadcasts a controller beacon with the CORRECT card color + serial but the
 WRONG card-hash bytes (byte2 / byte7), driving the motor full forward. Tells us
 whether the motor validates the hash:
 
-  * motor still spins  -> hash is NOT checked (only colour+serial matter)
+  * motor still spins  -> hash is NOT checked (only color+serial matter)
   * motor ignores it   -> hash IS checked (spoofing needs the right byte2/7)
 
   >>> Runs ON the Pico W, not the Mac. Copy as main.py and run. <<<
@@ -18,7 +18,7 @@ Procedure:
 import bluetooth
 import time
 
-# ── card: correct colour + serial for the group ──────────────────────
+# ── card: correct color + serial for the group ──────────────────────
 CARD_COLOR = 0x02          # purple
 CARD_SERIAL = 1126
 

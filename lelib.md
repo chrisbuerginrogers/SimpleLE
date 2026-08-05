@@ -109,3 +109,11 @@ Reads color data from a LEGO color sensor. Extends `legoeducation.ColorSensor`.
 | 9 | Orange |
 | 10 | Azure |
 | other | Unknown |
+
+---
+
+## Reading without connecting
+
+Anything that works off a *card* rather than a connected object lives in
+`cardlib` instead, so this library stays the plain "connect and drive it"
+API. See [cardlib.md](cardlib.md).

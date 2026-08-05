@@ -27,7 +27,7 @@ when something moves.
 
 Defaults target the RED#1133 color sensor. Note that a card serial is NOT
 unique on its own — RED#1126, YELLOW#1126 and PURPLE#1126 all exist — so
-the match is on colour AND serial.
+the match is on color AND serial.
 
     python watch_service_data.py
     python watch_service_data.py --serial 1126 --color PURPLE
@@ -72,7 +72,7 @@ def describe(index, value, device_type):
     if index == 0:
         return 'device type', DEVICE_TYPE_NAMES.get(value, f'unknown 0x{value:02x}')
     if index == 1:
-        return 'card colour', color_name(value)
+        return 'card color', color_name(value)
     if index in (2, 7):
         return 'card token', ''
     if index in (3, 4):
@@ -234,7 +234,7 @@ def main():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--serial', type=int, default=1133, help='Card serial (default 1133)')
     parser.add_argument('--color', default='RED',
-                        help="Card colour, since serials aren't unique (default RED). "
+                        help="Card color, since serials aren't unique (default RED). "
                              "Pass ANY to match on serial alone.")
     parser.add_argument('--all-bytes', action='store_true',
                         help='Also report the counter/CRC bytes 9-11')

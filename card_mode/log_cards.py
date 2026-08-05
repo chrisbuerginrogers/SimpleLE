@@ -77,7 +77,7 @@ def make_callback(cards, conflicts):
                   f"b7=0x{record['b7']:02x}")
             return
 
-        # Same colour AND serial but different derived bytes — that would
+        # Same color AND serial but different derived bytes — that would
         # break the determinism the whole analysis rests on, so shout.
         differing = [k for k in ('b2', 'b7') if known[k] != record[k]]
         if differing and key not in conflicts:
