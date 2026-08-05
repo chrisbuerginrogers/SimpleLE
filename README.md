@@ -76,8 +76,9 @@ seven steps each. `spin()`, `turn_left()` and `move_steps()` need the motor to
 report back, which a broadcast cannot do, so they are absent rather than faked
 — use `lelib` for those. Requires `pip install pyserial`.
 
-Verified end to end on an ESP32-S3 running MicroPython; a Pico W uses the same
-API.
+Verified end to end on an ESP32-S3 running MicroPython, driving a real LEGO
+motor with no connection and no controller — on two different cards, each with
+its own tokens. A Pico W uses the same API.
 
 ## Reading the cards themselves
 

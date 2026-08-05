@@ -28,12 +28,12 @@ import stick_ui
 CARD_COLOR = picolib.PURPLE      # RED, YELLOW, BLUE, TEAL, GREEN, PURPLE, ...
 CARD_SERIAL = 6055
 
-# !! PLACEHOLDERS -- these are card #1126's tokens, not #6055's. Card 6055's
-# have never been read. Leaving them here means the motor will ignore the
-# beacon, silently. Read the real ones off the air before expecting anything
-# to move (see the note above).
-CARD_B2 = 0xF3
-CARD_B7 = 0x48
+# Read off the air from card PURPLE #6055 -- the same pair came from both a
+# color sensor and a controller carrying it, which is what "per card, not per
+# device" means. A different card needs its own pair; the motor silently
+# ignores a beacon whose tokens are wrong.
+CARD_B2 = 0xDB
+CARD_B7 = 0x2C
 
 # ── what to do ────────────────────────────────────────────────────────────
 SPEED = 70          # -100..100, rounded to the seven steps a stick can send

@@ -12,12 +12,17 @@ BLE *broadcast*: every device tapped with the same card is one group, keyed by
 the card's color + serial. Controllers broadcast their stick state; motors
 listen and act, combining/averaging all senders they hear.
 
-── Auto-adopt ──────────────────────────────────────────────────────────
-You don't need the physical card. A motor announces its own color+serial in
-its manufacturer-data advertisement, so with AUTO_ADOPT the Pico first SCANS
-for the nearest motor, reads its card, and then broadcasts a matching beacon.
-Set AUTO_ADOPT = False to force the manual CARD_COLOR / CARD_SERIAL below
-(e.g. to probe whether an un-tapped motor answers a wildcard group).
+── Auto-adopt: DOES NOT WORK, retracted ────────────────────────────────
+AUTO_ADOPT was built on the belief that a motor announces its own
+color+serial in a manufacturer-data advertisement, so the Pico could scan
+for the nearest motor and copy its card. **A motor does not advertise at
+all** -- it only ever listens. A scan filtering on LEGO's company ID 0x0397
+returns nothing with a motor powered on and carded, so scan_for_motor()
+below can never find one. Leave AUTO_ADOPT = False and set the card by hand.
+
+Get the numbers from a *sender* carrying the card (a controller or color
+sensor) with ../watch_service_data.py, or read the color and serial off the
+card itself with ../examples/stick_read_card.py.
 
 ── Beacon layout (reverse-engineered; see scan_advertising.py) ──────────
     03  cc  f3  sl sh   b5 b6   48 80   k2 k1 k0
@@ -43,7 +48,7 @@ import time
 from micropython import const
 
 # ── behavior ─────────────────────────────────────────────────────────
-AUTO_ADOPT = False         # scan for a motor and copy its card color+serial
+AUTO_ADOPT = False         # BROKEN -- motors do not advertise; see the note above
 SCAN_MS = 4000             # how long to scan for a motor before giving up
 
 # Manual card — used when AUTO_ADOPT is False (the reliable, known-good path).

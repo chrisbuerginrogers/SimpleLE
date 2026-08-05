@@ -381,9 +381,31 @@ the tokens still have to come off the air.
 
 This does hand the b2/b7 hunt something it never had: the card's **RFID
 UID**. Every earlier attempt tried to derive the tokens from color and
-serial alone. Whether they are a function of the UID is untested — worth
-trying, since it would remove the last manual step from spoofing. Purple
-#6055 is UID `04B1C882871F90`; orange #7569 is `041C6E82871F90`.
+serial alone. Two cards now have UID *and* tokens together:
+
+| Card | RFID UID | b2 | b7 |
+|---|---|---|---|
+| PURPLE #6055 | `04 B1 C8 82 87 1F 90` | `0xdb` | `0x2c` |
+| ORANGE #7569 | `04 1C 6E 82 87 1F 90` | `0x7d` | `0x81` |
+
+The UIDs differ **only at bytes 1–2**, which narrows the search a lot.
+
+A CRC-8 sweep over both cards (all 256 polynomials × 256 inits ×
+reflections × xorouts, over several input selections) produced 54
+candidate parameter sets. That is **not a result**: two samples of 8 bits
+each are fitted by chance by roughly any 8-bit function, so every one of
+those 54 is almost certainly coincidence. Chasing them without more data
+would be the same mistake as the `b2 & 0xc0` marker that held for 6 cards
+and broke on 20.
+
+The cheap next step is more data, not more search: for each card, tap it
+on a controller and read b2/b7 off the air with `watch_service_data.py`,
+then read its UID with `examples/stick_read_card.py`. Four or five cards
+would make a CRC hit meaningful.
+
+Both pairs above read identically from a color sensor and from a
+controller carrying the same card — the "per card, not per device"
+property, now confirmed directly rather than inferred.
 
 Decoder: `pico tests/lego_card.py`. `decode_pages()` is pure and can be
 checked off-hardware; `read_card()` needs the reader.

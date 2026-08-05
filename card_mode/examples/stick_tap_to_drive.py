@@ -31,11 +31,10 @@ import stick_ui
 # The color and serial come off the card itself; only these two bytes have to
 # be looked up. Tap an unknown card to have its key printed for you.
 #
-# !! The entry below is a PLACEHOLDER: 0xF3/0x48 are card #1126's tokens, and
-# #6055's have never been read. As written the motor will ignore the beacon,
-# silently. Replace them with the real ones before expecting anything to move.
+# The pair below was read off the air from PURPLE #6055. Every other card
+# needs its own; the motor silently ignores a beacon with the wrong tokens.
 TOKENS = {
-    (picolib.PURPLE, 6055): dict(b2=0xF3, b7=0x48),
+    (picolib.PURPLE, 6055): dict(b2=0xDB, b7=0x2C),
 }
 
 SPEED = 70          # -100..100, rounded to the seven steps a stick can send

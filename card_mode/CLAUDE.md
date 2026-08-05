@@ -39,8 +39,33 @@ stripped).
 
 **Group address = card color (byte 1) + serial (bytes 3–4).** A brick
 only obeys broadcasts matching its own card. You don't need the physical
-card, just the numbers — a motor announces its own card in its
-manufacturer-data advertisement.
+card, just the numbers.
+
+**A motor only ever listens — it does not advertise at all.** Retracted
+claim: earlier notes here (inherited from `pico_fake_controller.py`) said
+a motor announces its own card in a manufacturer-data advertisement, and
+`AUTO_ADOPT` was built on scanning for exactly that. It does not. A scan
+filtering on LEGO's company ID `0x0397` returned **zero** devices with a
+motor powered on and carded.
+
+Also tested in the case that would most plausibly break it: tapping a card
+**onto** the motor produces nothing either. 40 s of scanning across
+repeated taps, diffed against a baseline, showed no new advertisement of
+any kind. So it is not "quiet until a tap" — it is silent always.
+
+**That test needs a positive control and the first two attempts didn't
+have one.** An empty result means nothing if the scanner would have heard
+nothing regardless: the first run was scanned before the tap actually
+happened, and in the second every LEGO device in the room had gone to
+sleep, so the baseline was empty too. The run that counts had the ESP32
+broadcasting throughout — 59 control packets heard in the baseline alone,
+proving the scanner worked, while the tapped motor stayed silent. Any
+future "device X doesn't advertise" claim needs the same control.
+
+Everything you need about a card comes from a *sender* carrying it — a
+controller or color sensor — or from the card's own RFID. This is also
+why spoofing works so cleanly: nothing on the motor's side ever talks
+back, so there is nothing to contradict a forged beacon.
 
 **Bytes 2 and 7 are mandatory.** They are a per-card hash: the same card
 yields the same pair on any device. A beacon with the correct serial but
@@ -122,8 +147,21 @@ color→action logic lives motor-side.
   while `0x02` had been observed directly from the same sensor minutes
   earlier. `0xff` usually means the brick wasn't presented well, not that
   the table is wrong — blue and teal both did this and came back correct.
-- **Spoofing works.** A Pico W broadcasting a crafted beacon drove a real
-  motor with no connection and no real controller present.
+- **Spoofing works, end to end, on two different cards.** An ESP32-S3
+  broadcasting a crafted FD02 beacon drove a real motor with no connection
+  and no controller involved:
+  - as **ORANGE #7569** (`b2=0x7d b7=0x81`) — forward then reverse, with the
+    motor confirmed *alone* on that card first (a scan showed no other orange
+    sender), so nothing else could have driven it;
+  - then, after the motor was re-tapped with the purple card, as
+    **PURPLE #6055** (`b2=0xdb b7=0x2c`) — and orange stopped working at the
+    same moment.
+
+  That second half is the cleanest confirmation of the group address in the
+  whole investigation: same board, same code, same speed, and the *only*
+  variable was which card the motor had been tapped with. A motor obeys the
+  card it was last tapped with, and nothing else. The whole chain is closed:
+  read a card's numbers, harvest its tokens, craft the beacon, move the motor.
 - **No transmit on macOS.** bleak can only scan and connect. Broadcasting
   a beacon needs a Pico W (or Linux/BlueZ) — see `pico tests/`.
 
@@ -150,9 +188,30 @@ broadcast.** Don't copy one into the other without swapping.
 **b2/b7 are NOT on the card.** They differ per card across all 16 cards in
 `cards.csv`, and nothing in the pages resembles them — so a tap gets you
 color and serial for free, but the tokens still have to be read off the air
-with `watch_service_data.py`. Untested idea worth a look: whether they derive
-from the card's **RFID UID**, which is new information the earlier CRC hunts
-never had. Purple#6055 is UID `04B1C882871F90`.
+with `watch_service_data.py`.
+
+The open lead is whether they derive from the card's **RFID UID**, which is
+new information the earlier CRC hunts never had. Two cards now have both:
+
+| Card | RFID UID | b2 | b7 |
+|---|---|---|---|
+| PURPLE #6055 | `04 B1 C8 82 87 1F 90` | `0xdb` | `0x2c` |
+| ORANGE #7569 | `04 1C 6E 82 87 1F 90` | `0x7d` | `0x81` |
+
+Note the UIDs differ **only at bytes 1–2** — everything else is identical,
+which is a strong hint the tokens are a function of just those two bytes
+plus perhaps the color/serial.
+
+A CRC-8 sweep over both cards found 54 candidate parameter sets, which is
+**not evidence**: two samples × 8 bits is satisfied by chance by roughly any
+8-bit function. Do not chase any of those without a third and fourth card.
+The cheap next step is harvesting UID + tokens for more cards — tap each one
+on a controller, read the tokens off the air, and read its UID with
+`examples/stick_read_card.py`.
+
+Both pairs above were confirmed identical when read from a color sensor and
+a controller carrying the same card, which is what "per card, not per
+device" means in practice.
 
 **Reader gotcha:** the driver powers the Grove 5V rail itself, but on a cold
 start the first register write can go out before the boost settles and raise
