@@ -2,7 +2,7 @@
 Tap a LEGO connection card and see what it is, on the screen and out loud.
 
   >>> Runs ON the M5StickS3, not the Mac. <<<
-  Needs on the Stick: m5/, lego_card.py, stick_ui.py
+  Needs on the Stick: m5/ (2026-08 or later), lego_card.py, stick_ui.py
 
 The screen says LOOKING until the first card arrives, then turns the card's own
 color and shows the color name and serial. It beeps once when a card is read,
@@ -27,7 +27,7 @@ from time import sleep_ms
 
 import lego_card
 import stick_ui
-from m5.m5_rfid import DEFAULT_KEY
+from m5.m5_rfid import RFID, ReadError, DEFAULT_KEY
 
 
 def as_hex(data):
@@ -35,16 +35,29 @@ def as_hex(data):
 
 
 def dump(rfid):
-    '''The raw pages, to the console -- the evidence behind the decode.'''
+    '''The raw pages, to the console -- the evidence behind the decode.
+
+    Shows what None and ReadError each mean now that the driver tells them
+    apart: None is the tag refusing this command for good, ReadError is a
+    read that fell over and stops the dump because the tag has likely gone.
+    '''
     if rfid.sak == 0x00:
         for page in range(0, 45, 4):
-            data = rfid.read_pages(page)
-            if data is None:
+            try:
+                data = rfid.read_pages(page)
+            except ReadError as e:
+                print('  page {:2d}  read failed ({})'.format(page, e))
                 break
+            if data is None:
+                break               # not a tag type that serves 0x30
             print('  page {:2d}  {}'.format(page, as_hex(data)))
     else:
         for block in range(0, 16):
-            data = rfid.read_block(block, DEFAULT_KEY)
+            try:
+                data = rfid.read_block(block, DEFAULT_KEY)
+            except ReadError as e:
+                print('  block {:2d}  read failed ({})'.format(block, e))
+                continue
             print('  block {:2d}  {}'.format(
                 block, 'locked' if data is None else as_hex(data)))
 
@@ -54,7 +67,7 @@ def main():
     ui.looking()
     print('tap a card on the reader')
 
-    rfid = lego_card.open_reader()
+    rfid = RFID()
     last_uid = None
 
     try:
@@ -81,10 +94,11 @@ def main():
 
             try:
                 color, serial = lego_card.read_card_data(rfid)
-            except lego_card.CardReadFailed as e:
-                # The read fell over, which says nothing about the card. Forget
-                # the UID so the next pass tries again instead of writing it
-                # off as a repeat.
+            except ReadError as e:
+                # The read fell over, which says nothing about the card, and
+                # the driver already retried it three times. Forget the UID so
+                # the next pass tries again instead of writing it off as a
+                # repeat.
                 print('read failed ({}), will retry'.format(e))
                 last_uid = None
                 rfid.halt()

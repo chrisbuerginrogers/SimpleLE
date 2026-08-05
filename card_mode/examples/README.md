@@ -18,7 +18,7 @@ that only *reads* can run straight off the Mac.
 
 ## The screen and the beep
 
-All three Stick examples share one look, in `stick_ui.py`:
+All four Stick examples share one look, in `stick_ui.py`:
 
 - the screen fills with the **card's own color** and shows its name and serial
 - a short high beep when a card is read, a low buzz when something is wrong
@@ -45,6 +45,14 @@ Copy the example you want to the Stick. Its libraries — `picolib.py`,
 import pico_lelib
 pico_lelib.install()          # puts the board libraries on the Stick
 ```
+
+**The `m5/` on the Stick has to be from 2026-08 or later** (from
+[chrisbuerginrogers/micropython](https://github.com/chrisbuerginrogers/micropython)
+under `M5StickS3/`). That release completed the font, added text clipping,
+and split `read_pages()`'s `None` into "wrong tag type" versus a retryable
+`ReadError` — three things this folder used to work around itself. On an
+older `m5/`, `stick_ui` raises `ImportError` on purpose rather than letting
+text quietly lose most of its capitals, which is how that bug hid before.
 
 ## On the Mac
 

@@ -2,7 +2,7 @@
 Tap cards, hear what they are, and log every one with its FD02 broadcast.
 
   >>> Runs ON the M5StickS3, not the Mac. Install it as main.py. <<<
-  Needs on the Stick: m5/, lego_card.py, stick_ui.py
+  Needs on the Stick: m5/ (2026-08 or later), lego_card.py, stick_ui.py
 
 This is the card-harvesting tool. Every new card you tap goes into
 card_taps.csv on the Stick as one row: the card's RFID UID, its color and
@@ -51,6 +51,7 @@ import bluetooth
 
 import lego_card
 import stick_ui
+from m5.m5_rfid import RFID, ReadError
 
 LOG_PATH = 'card_taps.csv'
 
@@ -342,7 +343,7 @@ def main():
         ui.note('{} LOGGED'.format(rows))
 
     listener = Listener()
-    rfid = lego_card.open_reader()
+    rfid = RFID()
     last_uid = None
 
     try:
@@ -365,9 +366,10 @@ def main():
 
             try:
                 color, serial = lego_card.read_card_data(rfid)
-            except lego_card.CardReadFailed as e:
-                # Says nothing about the card -- forget the UID so the next
-                # pass reads it again instead of skipping it as a repeat.
+            except ReadError as e:
+                # Says nothing about the card, and the driver already retried
+                # it three times -- forget the UID so the next pass reads it
+                # again instead of skipping it as a repeat.
                 print('read failed ({}), will retry'.format(e))
                 last_uid = None
                 rfid.halt()

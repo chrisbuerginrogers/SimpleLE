@@ -24,10 +24,22 @@ little-endian. Do not copy one into the other without swapping.
 
 ── What is NOT on the card ───────────────────────────────────────────────
 The b2/b7 tokens a motor validates are not here. They differ per card across
-all 16 cards in ../cards.csv, so they are not a constant this could hardcode,
-and nothing on the card looks like them. They still have to be read off the
-air with ../watch_service_data.py. The card gets you the color and serial for
+every card sampled, so they are not a constant this could hardcode, and
+nothing on the card looks like them -- confirmed by dumping every page, not
+just 4-7: pages 8 through 19 read as zeros. They still have to be read off
+the air with ../watch_service_data.py, or harvested alongside the card by
+../examples/stick_log_cards.py. The card gets you the color and serial for
 free; the tokens remain a one-off registration per card.
+
+── What this needs from m5 ───────────────────────────────────────────────
+The m5 library from 2026-08 or later, where read_pages() tells "this tag
+type cannot serve that request" (returns None) apart from "the read did not
+complete" (raises ReadError), and retries the second case itself. Both used
+to come back as None, so this file carried its own retry loop and a
+CardReadFailed exception to tell them apart. Neither is needed now.
+
+Opening the reader is likewise plain RFID(): the Grove 5V boost
+settle-and-retry that open_reader() used to do lives in the driver.
 '''
 
 # Firmware color code -> App color code, matching picolib's constants and
@@ -51,17 +63,14 @@ def firmware_to_app(firmware_color):
 
 
 class NotALegoCard(Exception):
-    '''The tag read is genuinely not a LEGO connection card.'''
+    '''The tag is there and answered, and what it said was not a LEGO card.
 
-
-class CardReadFailed(Exception):
-    '''The read did not complete -- says nothing about what the card is.
-
-    Kept separate from NotALegoCard on purpose. A page read comes back empty
-    every so often even on a card that reads fine on either side of it (seen
-    live), usually because the card moved or was re-selected a moment before.
-    Treating that as "not a LEGO card" tells the user their good card is bad;
-    the right response is to read it again.
+    Distinct from m5_rfid.ReadError, which means the read did not complete
+    and is worth trying again. That distinction used to live here as a
+    CardReadFailed exception, because read_pages() returned None for both
+    cases; the driver now tells them apart itself and has already retried
+    three times before it raises. Getting this backwards is what makes a
+    good card look like a bad one to the user.
     '''
 
 
@@ -69,12 +78,15 @@ def decode_pages(data):
     '''(app_color, serial) from the 16 bytes read at page 4.
 
     Raises NotALegoCard if the magic marker is not there, which is what tells
-    a LEGO card apart from any other NTAG that happens to be nearby, and
-    CardReadFailed if the read simply did not deliver the bytes.
+    a LEGO card apart from any other NTAG that happens to be nearby.
+
+    A short buffer raises ValueError rather than anything card-shaped: a
+    successful read_pages() always returns 16 bytes, so getting fewer means
+    the caller passed something wrong, not that the card is unusual.
     '''
     if data is None or len(data) < 8:
-        raise CardReadFailed('only {} bytes read'.format(
-            0 if data is None else len(data)))
+        raise ValueError('need at least 8 bytes from page {}, got {}'.format(
+            FIRST_DATA_PAGE, 0 if data is None else len(data)))
     if bytes(data[0:4]) != CARD_MAGIC:
         raise NotALegoCard('no {} marker (got {})'.format(
             CARD_MAGIC, ''.join('%02X' % b for b in data[0:4])))
@@ -86,49 +98,30 @@ def decode_pages(data):
     return _FIRMWARE_TO_APP[firmware_color], serial
 
 
-def open_reader(attempts=6, delay_ms=500):
-    '''An RFID reader, retrying while the Grove 5V boost settles.
+def read_card_data(rfid):
+    '''(app_color, serial) for the selected card.
 
-    The driver powers the rail itself, but on a cold start the first register
-    write can go out before the boost has come up and time out.
+    Raises NotALegoCard for a tag that is there but is not one, and lets
+    m5_rfid.ReadError through for a read that did not complete -- the driver
+    has already retried that three times, re-selecting the tag each time,
+    before it raises.
     '''
-    from time import sleep_ms
-    from m5.m5_rfid import RFID
-
-    last = None
-    for attempt in range(attempts):
-        try:
-            return RFID()
-        except OSError as e:
-            last = e
-            sleep_ms(delay_ms)
-    raise OSError('RFID2 Unit did not answer on the Grove port after {} tries '
-                  '({}). Check it is plugged in.'.format(attempts, last))
+    data = rfid.read_pages(FIRST_DATA_PAGE)
+    if data is None:
+        # Still in the field but will not answer an unauthenticated 0x30 at
+        # all, which means a MIFARE Classic. LEGO cards are Ultralight/NTAG
+        # and always answer it.
+        raise NotALegoCard('tag will not answer an unauthenticated read; '
+                           'LEGO cards are Ultralight/NTAG')
+    return decode_pages(data)
 
 
-def read_card_data(rfid, attempts=3):
-    '''(app_color, serial) for the selected card, retrying an empty read.
-
-    Raises CardReadFailed only if every attempt came back short.
-    '''
-    from time import sleep_ms
-
-    last = None
-    for attempt in range(attempts):
-        try:
-            return decode_pages(rfid.read_pages(FIRST_DATA_PAGE))
-        except CardReadFailed as e:
-            last = e
-            sleep_ms(60)
-    raise last
-
-
-def read_card(rfid, attempts=3):
+def read_card(rfid):
     '''(uid_bytes, (app_color, serial)) for the card on the reader, or None.
 
     Returns None when no tag is present. Raises NotALegoCard for a tag that is
-    there but is not a LEGO card, CardReadFailed if the read kept coming back
-    empty.
+    there but is not a LEGO card, and m5_rfid.ReadError if the read kept
+    failing part way through.
     '''
     uid = rfid.read_uid()
     if uid is None:
@@ -136,4 +129,4 @@ def read_card(rfid, attempts=3):
     if rfid.sak != 0x00:
         raise NotALegoCard('SAK {:#04x}; LEGO cards are Ultralight/NTAG (0x00)'
                            .format(rfid.sak))
-    return bytes(uid), read_card_data(rfid, attempts)
+    return bytes(uid), read_card_data(rfid)

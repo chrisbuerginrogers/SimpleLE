@@ -18,47 +18,30 @@ wrong. Written once here so the examples stay short and behave the same.
 The screen deliberately keeps showing the last card after it is lifted off the
 reader. That card's color and serial are the ones in use, so blanking them
 would throw away the answer.
+
+Needs the m5 library from 2026-08 or later -- see the check below the imports.
 '''
 
 from m5.m5_audio import Speaker
-from m5.m5_display import Display, WHITE, BLACK, FONT_8X8
+from m5.m5_display import Display, WHITE, BLACK
+
+# The font used to be a 31-glyph subset with 18 of the 26 capitals missing,
+# and draw_char() drew anything missing as a blank -- so "ORANGE" came out
+# empty and looked like a dead panel rather than a font gap. This file used
+# to carry those 18 glyphs and patch them in. m5 ships the full printable
+# ASCII range now, so they are gone from here.
+#
+# Checked out loud rather than left to fail silently, because the old failure
+# was invisible: blank letters on a screen that is otherwise working.
+if not hasattr(Display, 'draw_text_centered'):
+    raise ImportError(
+        'stick_ui needs the m5 library from 2026-08 or later (complete font, '
+        'text clipping, draw_text_centered). The m5/ on this board is older, '
+        'so text would silently lose most of its capitals -- update it from '
+        'chrisbuerginrogers/micropython.')
 
 GRAY = 0x8410
 RED = 0xF800
-
-# ── the missing letters ───────────────────────────────────────────────────
-# m5_display's FONT_8X8 ships 31 glyphs -- digits plus C H P V W X Y Z and a
-# few lowercase. draw_char() silently falls back to a blank for anything else,
-# so "PURPLE" came out as "P  P  " and "ORANGE" as nothing at all.
-#
-# These are the same 8x8 font the existing glyphs come from (C, H, P, V, W, X,
-# Y and Z here match m5_display byte for byte), just the uppercase letters it
-# left out. Patched in rather than edited into m5_display.py so the m5 library
-# stays exactly as it is in the micropython repo -- the permanent home for
-# these is that file's FONT_8X8, if you want them everywhere.
-_MISSING_GLYPHS = {
-    'A': bytes([0x0C, 0x1E, 0x33, 0x33, 0x3F, 0x33, 0x33, 0x00]),
-    'B': bytes([0x3F, 0x66, 0x66, 0x3E, 0x66, 0x66, 0x3F, 0x00]),
-    'D': bytes([0x1F, 0x36, 0x66, 0x66, 0x66, 0x36, 0x1F, 0x00]),
-    'E': bytes([0x7F, 0x46, 0x16, 0x1E, 0x16, 0x46, 0x7F, 0x00]),
-    'F': bytes([0x7F, 0x46, 0x16, 0x1E, 0x16, 0x06, 0x0F, 0x00]),
-    'G': bytes([0x3C, 0x66, 0x03, 0x03, 0x73, 0x66, 0x7C, 0x00]),
-    'I': bytes([0x1E, 0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x1E, 0x00]),
-    'J': bytes([0x78, 0x30, 0x30, 0x30, 0x33, 0x33, 0x1E, 0x00]),
-    'K': bytes([0x67, 0x66, 0x36, 0x1E, 0x36, 0x66, 0x67, 0x00]),
-    'L': bytes([0x0F, 0x06, 0x06, 0x06, 0x46, 0x66, 0x7F, 0x00]),
-    'M': bytes([0x63, 0x77, 0x7F, 0x7F, 0x6B, 0x63, 0x63, 0x00]),
-    'N': bytes([0x63, 0x67, 0x6F, 0x7B, 0x73, 0x63, 0x63, 0x00]),
-    'O': bytes([0x1C, 0x36, 0x63, 0x63, 0x63, 0x36, 0x1C, 0x00]),
-    'Q': bytes([0x1E, 0x33, 0x33, 0x33, 0x3B, 0x1E, 0x38, 0x00]),
-    'R': bytes([0x3F, 0x66, 0x66, 0x3E, 0x36, 0x66, 0x67, 0x00]),
-    'S': bytes([0x1E, 0x33, 0x07, 0x0E, 0x38, 0x33, 0x1E, 0x00]),
-    'T': bytes([0x3F, 0x2D, 0x0C, 0x0C, 0x0C, 0x0C, 0x1E, 0x00]),
-    'U': bytes([0x33, 0x33, 0x33, 0x33, 0x33, 0x33, 0x3F, 0x00]),
-}
-
-for _ch, _glyph in _MISSING_GLYPHS.items():
-    FONT_8X8.setdefault(_ch, _glyph)      # never overwrite an existing glyph
 
 # Each card color as RGB565, so the screen can show the color itself rather
 # than only name it. Values follow LEGO's own color map where it has one.
@@ -101,18 +84,19 @@ class UI(object):
     def _line(self, y, text, color, scale=1, spacing=2):
         '''Draw one line centered, blanking the rest of that line first.
 
-        Everything is drawn uppercase. The font has all 26 capitals once
-        _MISSING_GLYPHS is patched in, but only nine lowercase letters, so
-        mixed-case text comes out full of holes.
+        Uppercase is a look, not a limitation -- the font has the full
+        printable ASCII range now, lowercase included.
+
+        Truncated to what fits rather than left to the library's clipping,
+        which trims evenly off both ends. For a label you would rather read
+        the start of it than the middle.
         '''
-        cell = 8 * scale + spacing
-        wide = (self.display.WIDTH + spacing) // cell
+        wide = self.display.max_chars(scale, spacing)
         text = str(text).upper()[:wide]
         self.display.draw_text(0, y, ' ' * wide, color, self.background,
                                scale=scale, spacing=spacing)
-        x = (self.display.WIDTH - self.display.text_width(text, scale, spacing)) // 2
-        self.display.draw_text(x, y, text, color, self.background,
-                               scale=scale, spacing=spacing)
+        self.display.draw_text_centered(y, text, color, self.background,
+                                        scale=scale, spacing=spacing)
 
     def looking(self, message='LOOKING', hint='tap a card'):
         '''Waiting for a card. Only shown before the first one arrives.'''

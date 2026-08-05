@@ -2,7 +2,7 @@
 Start up, wait for a card tap, then drive that card's motor.
 
   >>> Runs ON the M5StickS3, not the Mac. <<<
-  Needs on the Stick: m5/, picolib.py, lego_card.py, stick_ui.py
+  Needs on the Stick: m5/ (2026-08 or later), picolib.py, lego_card.py, stick_ui.py
 
 Tap a card on the RFID reader and the Stick reads its color and serial straight
 off the card, then broadcasts as that card so the motor tapped with the same
@@ -26,6 +26,7 @@ from time import sleep_ms
 import lego_card
 import picolib
 import stick_ui
+from m5.m5_rfid import RFID, ReadError
 
 # ── card tokens, keyed by (color, serial) ─────────────────────────────────
 # The color and serial come off the card itself; only these two bytes have to
@@ -45,7 +46,7 @@ def main():
     ui.looking('TAP A CARD')
     print('tap a card on the reader')
 
-    rfid = lego_card.open_reader()
+    rfid = RFID()
     motor = None
     driving = None
 
@@ -53,8 +54,9 @@ def main():
         while True:
             try:
                 found = lego_card.read_card(rfid)
-            except lego_card.CardReadFailed as e:
-                # A failed read says nothing about the card; try it again.
+            except ReadError as e:
+                # A failed read says nothing about the card, and the driver
+                # already retried it three times; go round again.
                 print('read failed ({}), will retry'.format(e))
                 rfid.halt()
                 sleep_ms(150)

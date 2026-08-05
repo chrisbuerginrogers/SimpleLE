@@ -240,10 +240,20 @@ Both pairs above were confirmed identical when read from a color sensor and
 a controller carrying the same card, which is what "per card, not per
 device" means in practice.
 
-**Reader gotcha:** the driver powers the Grove 5V rail itself, but on a cold
-start the first register write can go out before the boost settles and raise
-`ETIMEDOUT`. Retry — `lego_card.open_reader()` does. The RFID/Grove code is
-maintained in `chrisbuerginrogers/micropython` under `M5StickS3/`, not here.
+**Needs the m5 library from 2026-08 or later.** The RFID/Grove and display
+code is maintained in `chrisbuerginrogers/micropython` under `M5StickS3/`,
+not here, and that update moved three workarounds out of this repo and into
+the driver where they belong:
+
+| Was worked around here | Now |
+|---|---|
+| `lego_card.open_reader()` retried the Grove 5V boost settling | `RFID()` settles and retries itself |
+| `CardReadFailed` vs `NotALegoCard`, because `read_pages()` returned `None` for both a wrong tag type and a failed read | `None` means only the former, `ReadError` the latter, and it retries the latter 3× |
+| `stick_ui._MISSING_GLYPHS` patched in 18 missing capitals | the font is the full printable ASCII range |
+
+`stick_ui` raises `ImportError` on an older `m5/` rather than letting text
+silently lose its capitals again — that failure was invisible, which is what
+made it expensive.
 
 ## Ruled out — don't retry these
 
@@ -253,13 +263,30 @@ maintained in `chrisbuerginrogers/micropython` under `M5StickS3/`, not here.
 | b2/b7 = halves of a CRC-16 | all 65536 polynomials × inits × reflections × input orders × both byte orders, 20 cards → 0 hits |
 | b2/b7 = sequential ID extension | adjacent serials scramble both bytes (BLUE#1001 `d6`/`12` vs BLUE#1003 `c3`/`c9`) |
 | b2 & 0xc0 is a constant marker | held for 6 cards, broke on 20 — retracted |
+| b2 or b7 = the symbol printed on the card | the symbol maps 1:1 to the color, and the 8 purple cards in `card_taps.csv` — one symbol between them — carry 8 distinct b2 and 6 distinct b7. A byte that varies within a symbol is not encoding it. The symbol is also already on the air as b1. |
+| b7 = a shared card *design* (the same-color b7 collisions) | proposed when 3 of 5 b7 collisions turned out to be same-color, against 0.3 expected. Killed by the line above: with symbol ↔ color there is no shared design for them to mark, so those collisions are what the null predicted. Noted because the clustering is real and will look meaningful again on the next sample. |
 | b8 = reflection / brightness | it holds and dithers ±1 regardless of brightness |
 | b8 = uptime counter | it oscillates in place and has risen as well as fallen |
 | byte 0 = message type | it's the device type; a capture locked to one address sees it constant |
 | bytes 5–6 pack four 4-bit axes | there are two sticks; the motor reads one low nibble per byte |
 
-Raw data for re-checking any of this is in `cards.csv` (20 cards) and
-`data from controller` (38 controller packets).
+Raw data for re-checking any of this is in `cards.csv` (20 cards),
+`card_taps.csv` (28 cards **with their RFID UIDs**, harvested with
+`examples/stick_log_cards.py`) and `data from controller` (38 controller
+packets).
+
+`card_taps.csv` is the one to attack the hash with — it is the only file
+pairing a card's UID with its tokens. It cross-checks clean: 10 of its cards
+also appear in `cards.csv` and all 10 agree on b2 and b7 exactly, captured
+months apart with a different tool. Its 14 color-sensor and 14 controller rows
+also re-confirm the byte map on data it was not derived from (`b5` = `0xff`
+or a detected color for the sensor, stick position for the controller; `b6`
+always `0`).
+
+**b2 looks like a hash, not a field.** 27 distinct values across 28 cards,
+spread 4..251 over 14 of the 16 high nibbles, with 1 colliding pair where
+random 8-bit values predict 1.5. Anything proposing it is a small
+enumeration has to explain that spread first.
 
 ## Open questions
 
