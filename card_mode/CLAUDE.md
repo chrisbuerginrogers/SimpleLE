@@ -256,7 +256,7 @@ is why it is a poll loop and not a one-shot script. Its stdout **is** the
 protocol, so nothing in it may print anything that isn't a JSON reply.
 
 **Not Pico-only.** Verified end-to-end on an ESP32-S3 (MicroPython 1.28):
-`pico_lelib` set sticks, the board broadcast them, and `lelib.read_sensor`
+`pico_lelib` set sticks, the board broadcast them, and `cardlib.read_sensor`
 read the same values back off the air. Any MicroPython board with a BLE
 radio works — note the ESP32-**S2** has no Bluetooth at all.
 `pico_lelib.install()` copies both files over the raw REPL and deliberately

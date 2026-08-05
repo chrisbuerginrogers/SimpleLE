@@ -79,7 +79,7 @@ def _wire_color(app_color):
 # the stick byte, as a signed 4-bit value: 0 stop, +1..+3 forward, -1..-3
 # reverse. Everything else (0x4..0xc) is out of range and reads as dead.
 #
-# SPEED_STEPS matches lelib.SPEED_STEPS, so a percentage rounds the same way
+# SPEED_STEPS matches cardlib.SPEED_STEPS, so a percentage rounds the same way
 # whether it is sent over GATT from the Mac or broadcast from the Pico.
 SPEED_STEPS = (-100, -67, -33, 0, 33, 67, 100)
 MAX_STEP = 3

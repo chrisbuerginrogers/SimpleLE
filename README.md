@@ -13,9 +13,16 @@ A thin Python wrapper around the [`legoeducation`](https://pypi.org/project/lego
 
 All four classes share the same connection behavior: up to 5 retries with a 1-second delay between attempts, raising `ConnectionError` on final failure.
 
-## Functions
+## cardlib: talking to a card, with no connection
 
-These work off a card rather than a connected object:
+`cardlib.py` identifies hardware by its **card** rather than by a connected
+object. It listens to the advertisement every device broadcasts anyway, so it
+needs no pairing and doesn't use up a device's single connection slot — you can
+watch a controller while a motor is being driven by it. A card names a *group*,
+so one call can report a color sensor and a controller together.
+
+`lelib` stays the plain connect-and-drive library; this is kept separate so the
+two don't get mixed up.
 
 | Function | Purpose |
 |---|---|
@@ -24,27 +31,22 @@ These work off a card rather than a connected object:
 | `set_speed(card_serial, speed, card_color=None)` | Set the speed of whichever motor holds that card, rounded to seven steps |
 
 ```python
-import lelib
+import cardlib
 import legoeducation as le
 
-lelib.find_cards()
+cardlib.find_cards()
 # [{'color': 6, 'serial': 6055, 'device': 'color sensor'},
 #  {'color': 6, 'serial': 6055, 'device': 'controller'}]
 
-lelib.read_sensor(6055, le.LEGO_COLOR_PURPLE)
+cardlib.read_sensor(6055, le.LEGO_COLOR_PURPLE)
 # {'color': 2, 'controller': (0, 0)}    color 2 = Yellow, both sticks centered
 
-lelib.set_speed(6055, 45, le.LEGO_COLOR_PURPLE)   # 45 rounds to 33
+cardlib.set_speed(6055, 45, le.LEGO_COLOR_PURPLE)   # 45 rounds to 33
 # 33
 ```
 
 If `read_sensor()` comes back empty, `find_cards()` is the answer — an empty
 read is nearly always a card number matching nothing on the air.
-
-`read_sensor()` listens to the advertisement every device broadcasts anyway, so
-it needs no pairing and doesn't use up a device's single connection slot — you
-can watch a controller while a motor is being driven by it. A card names a
-group, so one call can report a color sensor and a controller together.
 
 Serials are allocated per color, so `1126` alone can match a red card *and* a
 blue one. Pass `card_color` whenever you can.
@@ -115,7 +117,7 @@ motor.stop()
 
 ## API
 
-See [lelib.md](lelib.md) for the lelib API reference, or `docs/` for a full per-class reference covering every method (including the underlying `legoeducation` calls lelib doesn't rename) with an example each:
+See [lelib.md](lelib.md) for the lelib API reference and [cardlib.md](cardlib.md) for the card-addressed one, or `docs/` for a full per-class reference covering every method (including the underlying `legoeducation` calls lelib doesn't rename) with an example each:
 
 - [docs/singleMotor.md](docs/singleMotor.md)
 - [docs/doubleMotor.md](docs/doubleMotor.md)

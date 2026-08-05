@@ -18,20 +18,20 @@ room and you want a particular one.
 import os
 import sys
 
-# lelib.py and pico_lelib.py live in the repo root, two levels up.
+# cardlib.py and pico_cardlib.py live in the repo root, two levels up.
 sys.path.insert(0, os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import time
 
-import lelib
+import cardlib
 
 # ── which card to watch ───────────────────────────────────────────────────
 # None means "whatever is out there", which is the usual case and saves
 # getting the numbers wrong. Serials are handed out per color, so if you do
 # set these, set both: RED#1126 and BLUE#1126 are different cards.
 CARD_SERIAL = None       # e.g. 6055
-CARD_COLOR = None        # e.g. 6 for purple; see lelib.md for the numbers
+CARD_COLOR = None        # e.g. 6 for purple; see cardlib.md for the numbers
 
 COLOR_NAMES = {0: 'No color', 1: 'Red', 2: 'Yellow', 3: 'Blue', 4: 'Teal',
                5: 'Green', 6: 'Purple', 7: 'White', 8: 'Magenta', 9: 'Orange',
@@ -50,7 +50,7 @@ def pick_card():
     on the air, rather than a device that is switched off.
     '''
     print('listening for cards...')
-    cards = lelib.find_cards(timeout=5.0)
+    cards = cardlib.find_cards(timeout=5.0)
 
     if not cards:
         print('Nothing is broadcasting at all. Check the devices are switched '
@@ -81,7 +81,7 @@ def main():
 
     print('\nwatching {} -- Ctrl-C to stop\n'.format(card_name(color, serial)))
     while True:
-        reading = lelib.read_sensor(serial, color, timeout=1.0)
+        reading = cardlib.read_sensor(serial, color, timeout=1.0)
 
         if reading['color'] is None:
             sensor = 'no sensor heard'

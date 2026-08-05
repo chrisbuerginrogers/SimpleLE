@@ -5,7 +5,7 @@ the radio.
     from pico_lelib import doubleMotor
 
     motor = doubleMotor()
-    motor.connect(1126, card_color=le.LEGO_COLOR_PURPLE)
+    motor.connect(6055, card_color=le.LEGO_COLOR_PURPLE)
     motor.set_speed(45)
     motor.run()
     motor.stop()
@@ -48,7 +48,7 @@ deliberately absent rather than faked:
 Use lelib for those -- it connects properly and can do all of it.
 
 Reading is the other way round: the Mac can already listen, so colorSensor and
-controller here read the air directly through lelib.read_sensor() and never
+controller here read the air directly through cardlib.read_sensor() and never
 involve the board at all.
 '''
 
@@ -60,7 +60,7 @@ import time
 import serial
 from serial.tools import list_ports
 
-import lelib
+import cardlib
 from legoeducation.color_map import _firmware_to_app
 
 # USB vendor IDs of boards that might be running MicroPython. A board is only
@@ -444,25 +444,25 @@ def find_card(card_serial, card_color=None, timeout=TOKEN_SCAN_TIMEOUT):
         if found:
             return
         for uuid, payload in (adv.service_data or {}).items():
-            if uuid.lower() != lelib._FD02_UUID or len(payload) < 8:
+            if uuid.lower() != cardlib._FD02_UUID or len(payload) < 8:
                 continue
-            if not lelib._card_matches(payload, card_serial, card_color):
+            if not cardlib._card_matches(payload, card_serial, card_color):
                 continue
-            found['color'] = _firmware_to_app(lelib._signed_byte(payload[1]))
+            found['color'] = _firmware_to_app(cardlib._signed_byte(payload[1]))
             found['b2'] = payload[2]
             found['b7'] = payload[7]
 
     async def scan():
-        scanner = lelib.BleakScanner(detection_callback=on_advertisement)
+        scanner = cardlib.BleakScanner(detection_callback=on_advertisement)
         await scanner.start()
         try:
             deadline = time.time() + timeout
             while time.time() < deadline and not found:
-                await lelib.asyncio.sleep(0.1)
+                await cardlib.asyncio.sleep(0.1)
         finally:
             await scanner.stop()
 
-    lelib._run(scan())
+    cardlib._run(scan())
 
     if not found:
         card = card_serial if card_color is None else '{}/{}'.format(
@@ -477,8 +477,8 @@ def find_card(card_serial, card_color=None, timeout=TOKEN_SCAN_TIMEOUT):
 
 # ── motors ───────────────────────────────────────────────────────────────
 
-SPEED_STEPS = lelib.SPEED_STEPS
-round_speed = lelib.round_speed
+SPEED_STEPS = cardlib.SPEED_STEPS
+round_speed = cardlib.round_speed
 
 
 class _BroadcastMotor(object):
@@ -593,7 +593,7 @@ class _BroadcastReader(object):
 
     def connect(self, card_serial, card_color=None):
         '''Remember which card to listen for, and check it can be heard.'''
-        reading = lelib.read_sensor(card_serial, card_color, timeout=self.timeout)
+        reading = cardlib.read_sensor(card_serial, card_color, timeout=self.timeout)
         if reading['color'] is None and reading['controller'] is None:
             card = card_serial if card_color is None else '{}/{}'.format(
                 card_color, card_serial)
@@ -609,7 +609,7 @@ class _BroadcastReader(object):
         if not self.connected:
             raise ConnectionError(
                 'Not connected. Call connect(card_serial, card_color=...) first.')
-        return lelib.read_sensor(self.card_serial, self.card_color,
+        return cardlib.read_sensor(self.card_serial, self.card_color,
                                  timeout=self.timeout)
 
 

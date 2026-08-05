@@ -4,9 +4,15 @@
 A thin Python wrapper around the `legoeducation` pip package. The goal is simpler method names and automatic Bluetooth reconnect logic for classroom use with LEGO Education hardware.
 
 ## Key files
-- `lelib.py` — the library (four classes: `singleMotor`, `doubleMotor`, `controller`, `colorSensor`),
-  plus `read_sensor()` / `set_speed()` which work off a card rather than a connected object
+- `lelib.py` — the library (four classes: `singleMotor`, `doubleMotor`, `controller`,
+  `colorSensor`). **Keep it to GATT-connected work only.** Anything addressed by card
+  rather than by a connected object belongs in `cardlib.py`, deliberately, so the
+  simple LEGO library doesn't get mixed up with the broadcast protocol.
 - `lelib.md` — API reference; keep in sync with `lelib.py` whenever methods change
+- `cardlib.py` — connectionless: `find_cards()`, `read_sensor()`, `set_speed()`. Named by
+  card, no pairing, doesn't consume a device's one connection slot. Imports `lelib` for
+  the motor classes `set_speed()` needs; the dependency runs one way only.
+- `cardlib.md` — its API reference
 - `pico_lelib.py` — same syntax as lelib, but drives motors by BLE *broadcast*. macOS
   cannot transmit an advertisement, so commands go over USB serial to a MicroPython
   board (`card_mode/pico tests/pico_server.py` + `picolib.py`) which does the radio

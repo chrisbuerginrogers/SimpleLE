@@ -27,6 +27,11 @@ import stick_ui
 # ── your card ─────────────────────────────────────────────────────────────
 CARD_COLOR = picolib.PURPLE      # RED, YELLOW, BLUE, TEAL, GREEN, PURPLE, ...
 CARD_SERIAL = 6055
+
+# !! PLACEHOLDERS -- these are card #1126's tokens, not #6055's. Card 6055's
+# have never been read. Leaving them here means the motor will ignore the
+# beacon, silently. Read the real ones off the air before expecting anything
+# to move (see the note above).
 CARD_B2 = 0xF3
 CARD_B7 = 0x48
 

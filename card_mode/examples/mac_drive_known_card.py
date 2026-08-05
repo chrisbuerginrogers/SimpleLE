@@ -25,7 +25,7 @@ import pico_lelib
 
 # ── your card ─────────────────────────────────────────────────────────────
 # These have to match a real card or connect() will find nothing. To see which
-# cards are actually broadcasting:  python3 -c "import lelib; print(lelib.find_cards())"
+# cards are actually broadcasting:  python3 -c "import cardlib; print(cardlib.find_cards())"
 CARD_SERIAL = 6055
 CARD_COLOR = 6           # le.LEGO_COLOR_PURPLE; see lelib.md for the numbers
 
