@@ -11,26 +11,29 @@ broadcasts. That is the pairing needed to attack the open question in
 ../CLAUDE.md -- what bytes 2 and 7 are a function of.
 
 ── How to tap ────────────────────────────────────────────────────────────
-Two taps per card, in either order:
+Two taps per card, in this order:
 
     1. tap the card on a CONTROLLER or COLOR SENSOR, switched on and nearby
     2. tap the same card on the Stick's RFID reader
 
-Step 1 is not optional and cannot be skipped. b2/b7 are not stored on the
-card, so the RFID read alone gets you color and serial and nothing else --
-the tokens only exist in what a sender broadcasts. Doing step 1 first is
-easier: the sender keeps broadcasting that card, so the Stick already has
-the beacon waiting and saves the moment you tap it on the reader.
+Step 1 first, and it is not optional. b2/b7 are not stored on the card, so
+the RFID read alone gets you color and serial and nothing else -- the
+tokens only exist in what a sender broadcasts. Tapping the sender first
+means it is already broadcasting that card by the time the Stick sees it,
+so the answer comes back the instant you tap.
+
+Every tap answers immediately. The Stick never waits for a beacon to turn
+up, so you can go straight down a stack of cards at whatever pace you like.
 
 The screen fills with the card's own color and names it, and:
 
     one high beep      the card was read
     two rising notes   the row went into the log
-    a low buzz         not a LEGO card, or no beacon heard for it
+    a low buzz         not a LEGO card, or no beacon on the air for it
 
-If you get the buzz with NO BEACON, that card's sender step did not happen
-(or the sender is out of range or asleep). Tap it on the controller and tap
-it here again -- nothing was written, so there is nothing to undo.
+If you get the buzz with NO BEACON, step 1 did not happen for that card (or
+the sender is out of range or asleep). Tap it on the sender and tap it here
+again -- nothing was written, so there is nothing to undo.
 
 ── The file ──────────────────────────────────────────────────────────────
 card_taps.csv on the Stick, appended to and closed after every row so
@@ -62,10 +65,6 @@ COLUMNS = ('n,uid,color,color_app,serial,'
 FD02 = 0xFD02
 SERVICE_DATA_16 = 0x16          # AD type: Service Data - 16-bit UUID
 PAYLOAD_LEN = 12
-
-#: How long to keep waiting for a card's beacon after it is tapped here.
-#: Long enough to walk the card over to the controller and tap it there.
-WAIT_MS = 15000
 
 #: A beacon older than this is not trusted to still describe the card in
 #: your hand -- a sender that has since been re-tapped would be stale.
@@ -261,31 +260,16 @@ def build_row(n, uid, color, serial, payload, rssi):
 
 # ── one tap ───────────────────────────────────────────────────────────────
 
-def wait_for_beacon(listener, ui, color, serial):
-    '''The card's beacon, waiting up to WAIT_MS for it to appear. None if not.
-
-    Called after the card is already on screen, so the user can read the
-    color and serial while carrying it to the controller.
-    '''
-    listener.drain()
-    found = listener.beacon_for(color, serial)
-    if found is not None:
-        return found
-
-    ui.status('NO BEACON YET')
-    ui.note('TAP ON SENDER')
-    deadline = time.ticks_add(time.ticks_ms(), WAIT_MS)
-    while time.ticks_diff(deadline, time.ticks_ms()) > 0:
-        listener.drain()
-        found = listener.beacon_for(color, serial)
-        if found is not None:
-            return found
-        time.sleep_ms(100)
-    return None
-
-
 def log_card(uid, color, serial, listener, ui, state):
-    '''Show the card, find its beacon, and add a row if both are in hand.'''
+    '''Show the card, find its beacon, and add a row if both are in hand.
+
+    Answers immediately either way. There is deliberately no waiting for a
+    beacon to turn up: the beacon has to already be on the air, because you
+    tap the sender first. Waiting here blocked the whole main loop, so the
+    next card you tapped was ignored until the wait ran out -- which looked
+    like the reader being slow to identify a card rather than the previous
+    card still timing out.
+    '''
     key = as_hex(uid)
     print()
     print('{} #{}  uid {}'.format(stick_ui.color_name(color), serial, key))
@@ -297,9 +281,8 @@ def log_card(uid, color, serial, listener, ui, state):
         ui.note('{} LOGGED'.format(state['rows']))
         return
 
-    ui.status('LISTENING')
-    ui.note('')
-    found = wait_for_beacon(listener, ui, color, serial)
+    listener.drain()
+    found = listener.beacon_for(color, serial)
     if found is None:
         # Nothing is written on purpose: a UID with no tokens is not the
         # pairing this file exists to collect, and a half-row would read
