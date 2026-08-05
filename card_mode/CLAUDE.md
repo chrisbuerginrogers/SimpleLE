@@ -100,13 +100,18 @@ symbol, read off the physical cards:
 | fw | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | color | magenta | purple | blue | azure | teal | green | yellow | orange | red | white |
-| symbol | heart | square | diamond | heart | ? | square | circle | diamond | circle | ? |
+| symbol | heart | square | diamond | heart | *no card* | square | circle | diamond | circle | *no card* |
 
-Teal and white were not in the photographed set; if the two-per-symbol rule
-holds they share a fifth symbol. **Do not look for an arithmetic rule mapping
-code → symbol** — an earlier "period-4 pairing" claim was fitted to four
-points and is now retracted, killed by red carrying a circle rather than the
-square it predicted. See `Card_mode.md`.
+**Complete — eight card colors, four symbols, two colors each.** There is no
+fifth symbol, because there are no teal or white cards. That squares with the
+already-known fact that magenta, orange and azure are card-only colors: the
+ten firmware codes split into card-only (magenta, azure, orange), both
+(red, yellow, blue, green, purple) and sensor-only (teal, white).
+
+**Do not look for an arithmetic rule mapping code → symbol** — an earlier
+"period-4 pairing" claim was fitted to four points and is now retracted,
+killed by red carrying a circle rather than the square it predicted. See
+`Card_mode.md`.
 
 Manufacturer data (company ID `0x0397`) is a **different layout** —
 `[group, device, color, serial_lo, serial_hi]`, with the color at index
@@ -177,6 +182,10 @@ color→action logic lives motor-side.
   azure exist only as *card* colors — testing the sensor against them
   measures nothing. A black brick reads `0xff` (No color), so black and
   an empty field of view are indistinguishable.
+- **Teal and white are the mirror image: sensor-only, with no card.** So
+  the ten firmware codes partition cleanly — card-only `{magenta, azure,
+  orange}`, both `{red, yellow, blue, green, purple}`, sensor-only
+  `{teal, white}`. Eight card colors, seven detectable colors, five shared.
 - **Re-measure before believing a color mismatch.** Brick distance, angle
   and room light all move byte 5. A purple brick read as RED in one sweep
   while `0x02` had been observed directly from the same sensor minutes

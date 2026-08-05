@@ -546,18 +546,34 @@ photographed together; teal and white were not in the set):
 | 2 | purple | square |
 | 3 | blue | diamond |
 | 4 | azure | heart |
-| 5 | teal | — not observed |
+| 5 | teal | — **no such card** |
 | 6 | green | square |
 | 7 | yellow | circle |
 | 8 | orange | diamond |
 | 9 | red | circle |
-| 10 | white | — not observed |
+| 10 | white | — **no such card** |
 
-Each symbol covers exactly two of the eight observed colors. If that carries
-to the rest of the set, **teal and white share a fifth symbol** nobody here
-has seen — assuming a white card exists at all, which is unconfirmed. That is
-the one prediction left in this section, and it is worth exactly what the
-last one was: see below.
+**The table is complete: eight card colors, four symbols, two colors each.**
+Teal and white are not missing data — there are no teal or white cards, so
+there is no fifth symbol to look for.
+
+That is not just an argument from an incomplete photo. It falls out of a
+partition this document already had, from the other direction:
+
+| | sensor detects it | sensor cannot |
+|---|---|---|
+| **card exists** | red, yellow, blue, green, purple | magenta, azure, orange |
+| **no card** | teal, white | — |
+
+The right-hand column is the already-recorded fact that magenta, orange and
+azure exist *only* as card colors. The bottom-left cell is the new one, and it
+is the exact complement: teal and white exist only as things the **sensor** can
+see. Two independent observations, each derived without reference to the other,
+carving the ten firmware codes into the same three groups.
+
+Corroborating: none of the 39 cards in `card_taps.csv` is teal or white. That
+is weaker than it looks — no card there is azure either, and azure cards
+plainly exist — so treat it as consistent rather than as the proof.
 
 > **Retracted: the period-4 pairing.** An earlier version of this section had
 > only four data points and read the colors as pairing off by firmware code,
@@ -581,6 +597,15 @@ The real pairs are `{1,4} {2,6} {3,8} {7,9}` by firmware code and
 and after two overfitted patterns in this document the right move is to stop
 looking for one: the symbol is an attribute of the color, assigned two colors
 to a symbol, and nothing observed says it is computed from the code.
+
+**Is the symbol constant within a color?** Assumed throughout, and it is what
+makes "magenta is a heart" a fact about magenta rather than about one card. The
+support is the purple set — every purple card seen carries a square — and the
+b1 argument, since the beacon has one byte per color and no room to distinguish
+cards of the same color. Not yet checked directly on magenta, which is the
+largest group in `card_taps.csv` at 11 cards and therefore the cheapest place
+to falsify it: one magenta card with a square would overturn this whole
+section.
 
 Colors here were identified from a photograph, so azure and blue could in
 principle be swapped with each other. That does not touch the retraction
