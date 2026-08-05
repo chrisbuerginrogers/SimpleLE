@@ -13,7 +13,7 @@ wrong. Written once here so the examples stay short and behave the same.
     ui.status('DRIVING')               # a line under the card, color kept
     ui.note('42 LOGGED')               # a second line under that
     ui.saved()                         # two rising notes: written to a file
-    ui.problem('NEED TOKENS', 'run watch_service_data')
+    ui.problem('NOT A CARD', 'no L3G0 marker')
 
 The screen deliberately keeps showing the last card after it is lifted off the
 reader. That card's color and serial are the ones in use, so blanking them

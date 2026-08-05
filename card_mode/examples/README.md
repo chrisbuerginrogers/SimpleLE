@@ -75,25 +75,24 @@ it runs whichever file `EXAMPLE` names at the top of `mac_run_on_stick.py` —
 edit that line to switch. It also runs from the workspace root rather than this
 folder, which is why the `mac_*.py` files resolve their paths themselves.
 
-## The catch: b2/b7
+## The b2/b7 bytes
 
-A motor checks two bytes of the beacon that are a per-card token. They cannot be
-worked out from the color and serial, so a beacon with the right serial and the
-wrong tokens is ignored.
+A motor checks two bytes of the beacon and ignores one that has them wrong,
+even with the right color and serial. They cannot be worked out from the color
+and serial — but they **can** be computed from the card's RFID UID, which is a
+CRC-16 of it (`../card_hash.py`, or `lego_card.card_hash()` on the board).
 
-They are **not stored on the card** — they differ per card across every card
-sampled, so tapping gets you the color and serial for free but never the
-tokens. Each card needs registering once.
+They used to be a per-card registration you filled in by hand. Now:
 
-Getting them depends on the example:
+- **`stick_tap_to_drive.py`** computes them from the UID of the card you tap.
+  Any card, first tap, nothing to register.
+- **The known-card examples** still take them typed in at the top of the file,
+  since they are given a card by number and never see one. Get them with
+  `python ../card_hash.py 04:B1:C8:82:87:1F:90`.
+- **`mac_drive_known_card.py`** does not ask: `pico_lelib`'s `connect()` scans
+  the air for them, which the Mac can do and the Stick cannot.
 
-- **`stick_tap_to_drive.py`** reads the color and serial off the card, and looks
-  the tokens up in its `TOKENS` table. Tap an unregistered card and it prints
-  the line to paste in.
-- **The known-card examples** need them typed in at the top of the file.
-- **`mac_drive_known_card.py`** does not ask you for them: `pico_lelib`'s
-  `connect()` scans the air for them, which the Mac can do and the Stick cannot.
-
-To read a card's tokens, run `../watch_service_data.py` on the Mac
-with a controller or color sensor carrying that card switched on, and take
-bytes 2 and 7 of the FD02 payload.
+To read the tokens off the air instead — worth doing to check the algorithm on
+a card it has not seen — run `../watch_service_data.py` on the Mac with a
+controller or color sensor carrying that card switched on, and take bytes 2 and
+7 of the FD02 payload.

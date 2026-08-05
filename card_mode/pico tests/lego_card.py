@@ -22,14 +22,16 @@ Read from a purple #6055 card:
 Note the serial is big-endian here, while the FD02 broadcast carries it
 little-endian. Do not copy one into the other without swapping.
 
-── What is NOT on the card ───────────────────────────────────────────────
-The b2/b7 tokens a motor validates are not here. They differ per card across
-every card sampled, so they are not a constant this could hardcode, and
-nothing on the card looks like them -- confirmed by dumping every page, not
-just 4-7: pages 8 through 19 read as zeros. They still have to be read off
-the air with ../watch_service_data.py, or harvested alongside the card by
-../examples/stick_log_cards.py. The card gets you the color and serial for
-free; the tokens remain a one-off registration per card.
+── The b2/b7 tokens a motor validates ────────────────────────────────────
+Not stored on the card -- confirmed by dumping every page, not just 4-7:
+pages 8 through 19 read as zeros and nothing anywhere looks like them. But
+they are *computable* from the card, because they are a CRC-16 of its UID:
+card_hash() below. So a tap now yields everything needed to drive a motor,
+and no card needs registering by hand any more.
+
+They used to have to be read off the air with ../watch_service_data.py, or
+harvested alongside the card by ../examples/stick_log_cards.py. Neither is
+necessary for driving -- only for gathering evidence about new cards.
 
 ── What this needs from m5 ───────────────────────────────────────────────
 The m5 library from 2026-08 or later, where read_pages() tells "this tag
@@ -60,6 +62,41 @@ def firmware_to_app(firmware_color):
     yellow, so skipping this yields plausible-looking wrong answers.
     '''
     return _FIRMWARE_TO_APP.get(firmware_color)
+
+
+def _reflect(value, width):
+    '''Reverse the low `width` bits of value -- 0b1101 -> 0b1011 at width 4.'''
+    out = 0
+    for _ in range(width):
+        out = (out << 1) | (value & 1)
+        value >>= 1
+    return out
+
+
+def card_hash(uid):
+    '''(b2, b7) -- the two beacon bytes a motor validates -- from a card UID.
+
+    A CRC-16 of the 7 UID bytes: polynomial 0x0001, reflected in and out,
+    init 0, read big-endian so b2 is the high byte and b7 the low one. That
+    polynomial is x^16 + 1, which makes this an XOR fold of the UID rather
+    than anything cryptographic. Checked against all 39 cards in
+    ../card_taps.csv; ../card_hash.py is the same thing with a CLI.
+
+    Pass the UID read_card() returned. The motor cannot do this itself -- the
+    UID is not in the broadcast, so it compares b2/b7 against what it stored
+    when the card was tapped, which is exactly why computing them is enough
+    to drive it.
+    '''
+    crc = 0
+    for byte in uid:
+        crc ^= _reflect(byte, 8) << 8
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x0001) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    crc = _reflect(crc, 16)
+    return (crc >> 8) & 0xFF, crc & 0xFF
 
 
 class NotALegoCard(Exception):

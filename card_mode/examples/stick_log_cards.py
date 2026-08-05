@@ -7,8 +7,10 @@ Tap cards, hear what they are, and log every one with its FD02 broadcast.
 This is the card-harvesting tool. Every new card you tap goes into
 card_taps.csv on the Stick as one row: the card's RFID UID, its color and
 serial, and all twelve bytes of the FD02 service data a device carrying it
-broadcasts. That is the pairing needed to attack the open question in
-../CLAUDE.md -- what bytes 2 and 7 are a function of.
+broadcasts. That pairing is what cracked bytes 2 and 7 -- they are a CRC-16
+of the UID (../card_hash.py). Adding cards here is now how the algorithm gets
+re-checked on hardware it has not seen, since the row records the b2/b7 the
+device actually broadcast rather than a computed one.
 
 ── How to tap ────────────────────────────────────────────────────────────
 Two taps per card, in this order:
@@ -18,9 +20,12 @@ Two taps per card, in this order:
 
 Step 1 first, and it is not optional. b2/b7 are not stored on the card, so
 the RFID read alone gets you color and serial and nothing else -- the
-tokens only exist in what a sender broadcasts. Tapping the sender first
-means it is already broadcasting that card by the time the Stick sees it,
-so the answer comes back the instant you tap.
+observed tokens only exist in what a sender broadcasts. Tapping the sender
+first means it is already broadcasting that card by the time the Stick sees
+it, so the answer comes back the instant you tap.
+
+Deliberately not shortcut with card_hash(): a computed value would agree with
+the algorithm by construction and this file would stop being evidence.
 
 Every tap answers immediately. The Stick never waits for a beacon to turn
 up, so you can go straight down a stack of cards at whatever pace you like.

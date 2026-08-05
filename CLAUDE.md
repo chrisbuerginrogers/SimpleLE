@@ -29,7 +29,10 @@ A thin Python wrapper around the `legoeducation` pip package. The goal is simple
   Self-contained (the scripts import each other by bare module name, so run them
   from inside the folder). `Card_mode.md` is the findings writeup and
   `card_mode/CLAUDE.md` the distilled version — keep both updated as bytes get
-  identified. Sub-folders:
+  identified. `card_hash.py` computes the b2/b7 bytes a motor validates from a
+  card's RFID UID (a CRC-16 of it); `--verify` re-checks that against all 39
+  logged cards, and `lego_card.card_hash()` is the board-side copy — keep the
+  two in step. Sub-folders:
   - `card_mode/examples/` — small single-purpose examples, split by where they run:
     `stick_*.py` on the M5StickS3 (can transmit), `mac_*.py` on the Mac (listens, or
     drives a Stick over USB). `stick_log_cards.py` is the odd one out: it is meant to

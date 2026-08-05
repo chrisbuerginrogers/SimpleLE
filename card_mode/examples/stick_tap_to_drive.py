@@ -10,15 +10,15 @@ card drives. The screen turns the card's color and shows which card is driving.
 Lift the card and it stops, but the screen keeps showing it -- that is the card
 whose details are in use.
 
-── The one thing the card does not carry ─────────────────────────────────
-A motor also checks two bytes of the beacon, b2 and b7, and ignores a beacon
-that has them wrong. Those are not stored on the card -- they differ per card
-across every card sampled -- so each card needs registering in TOKENS below
-once. Tap an unregistered card and this prints a line ready to paste in.
+── The two bytes the card does not store ─────────────────────────────────
+A motor also checks bytes 2 and 7 of the beacon and ignores one that has them
+wrong. They are not written on the card, but they are computable from it:
+they are a CRC-16 of the card's RFID UID, so lego_card.card_hash(uid) gets
+them from the same tap that gave us the color and serial.
 
-To find a card's tokens: run ../watch_service_data.py on the Mac
-with a controller or color sensor carrying that card switched on, and take
-bytes 2 and 7 of the FD02 payload.
+This used to be a lookup table you filled in by hand, one line per card, read
+off the air with ../watch_service_data.py. Any card works now, first tap, with
+nothing registered in advance.
 '''
 
 from time import sleep_ms
@@ -27,16 +27,6 @@ import lego_card
 import picolib
 import stick_ui
 from m5.m5_rfid import RFID, ReadError
-
-# ── card tokens, keyed by (color, serial) ─────────────────────────────────
-# The color and serial come off the card itself; only these two bytes have to
-# be looked up. Tap an unknown card to have its key printed for you.
-#
-# The pair below was read off the air from PURPLE #6055. Every other card
-# needs its own; the motor silently ignores a beacon with the wrong tokens.
-TOKENS = {
-    (picolib.PURPLE, 6055): dict(b2=0xDB, b7=0x2C),
-}
 
 SPEED = 70          # -100..100, rounded to the seven steps a stick can send
 
@@ -91,25 +81,16 @@ def main():
                 continue
 
             name = stick_ui.color_name(color)
+            b2, b7 = lego_card.card_hash(uid)
             print()
-            print('{} #{}  (UID {})'.format(
-                name, serial, ''.join('%02X' % b for b in uid)))
-
-            tokens = TOKENS.get(key)
-            if tokens is None:
-                ui.problem('NEED TOKENS', '{} {}'.format(name, serial))
-                print('not registered. Add this to TOKENS:')
-                print('    (picolib.{}, {}): dict(b2=0x??, b7=0x??),'.format(
-                    name, serial))
-                rfid.halt()
-                sleep_ms(1500)
-                continue
+            print('{} #{}  (UID {})  b2=0x{:02X} b7=0x{:02X}'.format(
+                name, serial, ''.join('%02X' % b for b in uid), b2, b7))
 
             if motor is not None:
                 motor.stop()
                 motor.close()
 
-            card = picolib.Card(color=color, serial=serial, **tokens)
+            card = picolib.Card(color=color, serial=serial, b2=b2, b7=b7)
             motor = picolib.Motor(card)
             driving = key
             sent = motor.set_speed(SPEED)

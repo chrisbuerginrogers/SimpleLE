@@ -2,9 +2,13 @@
 Tap-through logger for LEGO Education cards.
 
 Bytes 2 and 7 of the FD02 service data are card-derived and deterministic
-— the same card produces the same pair on any device — but they are not a
-sequential ID and not a CRC-8 of the visible fields. Cracking them needs
-a decent sample of known cards, and scanning them one at a time is slow.
+— the same card produces the same pair on any device. They turned out to
+be a CRC-16 of the card's RFID UID (see card_hash.py), which this logger
+cannot see: it listens to the air only. For UID-bearing rows use
+examples/stick_log_cards.py, which reads the card as well.
+
+What this is still good for is bulk (color, serial) → b2/b7 collection
+without an RFID reader, and scanning cards one at a time is slow.
 
 So: leave this running, tap cards against a sensor/hub one after another,
 and it records each distinct card exactly once. Every new card prints a

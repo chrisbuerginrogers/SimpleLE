@@ -29,11 +29,11 @@ stripped).
 |---|---|---|
 | 0 | device type — `0x02` color sensor, `0x03` controller | confirmed |
 | 1 | card color, **firmware** code | confirmed |
-| 2 | per-card token — **motor validates it** | required, algorithm not cracked |
+| 2 | CRC-16 of the card's RFID UID, high byte — **motor validates it** | confirmed, 39/39 |
 | 3–4 | card serial, little-endian | confirmed |
 | 5 | **sensor:** live detected color (`0xff` = none) · **controller:** RIGHT stick | confirmed |
 | 6 | **sensor:** always `0x00`, *not* reflection · **controller:** LEFT stick | confirmed |
-| 7 | per-card token — **motor validates it** | required, algorithm not cracked |
+| 7 | same CRC-16, low byte — **motor validates it** | confirmed, 39/39 |
 | 8 | slowly-varying, dithers ±1 — counter tail or an analog value | unidentified |
 | 9–11 | sender uptime: 24-bit little-endian, 1/256 ms per tick (so 10–11 alone = a 16-bit millisecond clock, wrapping every 65.5 s) | confirmed |
 
@@ -69,20 +69,44 @@ back, so there is nothing to contradict a forged beacon.
 
 **Bytes 2 and 7 are mandatory.** They are a per-card hash: the same card
 yields the same pair on any device. A beacon with the correct serial but
-wrong b2/b7 is **ignored by the motor** (confirmed by spoofing). To
-impersonate a card you must use its real b2/b7 — read them off any device
-already carrying that card.
+wrong b2/b7 is **ignored by the motor** (confirmed by spoofing).
 
-**Neither is a checksum of the card's color and serial.** Settled over 40
-cards: b2 and b7 are not *any* GF(2)-affine function of those 24 message
-bits, on any output bit, which rules out every CRC (any width, polynomial,
-init, reflection, xorout) and every XOR/parity digest in one shot. Sum-style
-checksums die separately — see `Card_mode.md`. Don't re-run a CRC sweep.
+**They are a CRC-16 of the card's 7-byte RFID UID** — polynomial `0x0001`,
+reflected in and out, init `0`, big-endian out, so b2 is the high byte and b7
+the low one. Verified on all 39 cards in `card_taps.csv`, exactly. Since
+`0x0001` is x¹⁶ + 1 this is an XOR fold, not cryptography: the UID is all you
+need. Use `card_hash.py` (Mac, has a CLI and `--verify`) or
+`lego_card.card_hash()` (board).
+
+So there are two ways to get the tokens, and the first is now the easy one:
+compute them from the card's UID, or read them off any device already
+carrying that card. **A card's UID is enough to drive its motor** — and since
+a UID is just a number, a fully fabricated card needs no physical tap.
+
+**The motor can't verify this itself.** The UID is not in the broadcast, so
+it compares b2/b7 against the value stored when the card was tapped. The
+check is an equality test, not a computation.
+
+**Not a checksum of the color and serial** — that stays true and is why the
+hunt took so long. b2/b7 are not *any* GF(2)-affine function of those 24
+message bits, on any output bit, over 39 cards. The message was never on the
+air. Don't re-run a sweep against color+serial; it is the wrong input.
 
 **Nothing in the beacon carries a card's printed symbol.** `b1` is the only
-color-dependent field and it differs per color, so cards that share a symbol
-across colors (green/purple/teal/magenta) share no byte. The symbol tracks
-the **firmware color code's pairing** instead — see `Card_mode.md`.
+color-dependent field and it differs per color, so two colors sharing a symbol
+share no byte. The symbol is a fixed attribute of the color, two colors per
+symbol, read off the physical cards:
+
+| fw | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| color | magenta | purple | blue | azure | teal | green | yellow | orange | red | white |
+| symbol | heart | square | diamond | heart | ? | square | circle | diamond | circle | ? |
+
+Teal and white were not in the photographed set; if the two-per-symbol rule
+holds they share a fifth symbol. **Do not look for an arithmetic rule mapping
+code → symbol** — an earlier "period-4 pairing" claim was fitted to four
+points and is now retracted, killed by red carrying a circle rather than the
+square it predicted. See `Card_mode.md`.
 
 Manufacturer data (company ID `0x0397`) is a **different layout** —
 `[group, device, color, serial_lo, serial_hi]`, with the color at index
@@ -172,7 +196,8 @@ color→action logic lives motor-side.
   whole investigation: same board, same code, same speed, and the *only*
   variable was which card the motor had been tapped with. A motor obeys the
   card it was last tapped with, and nothing else. The whole chain is closed:
-  read a card's numbers, harvest its tokens, craft the beacon, move the motor.
+  read a card's numbers, compute its tokens from the UID, craft the beacon,
+  move the motor.
 - **No transmit on macOS.** bleak can only scan and connect. Broadcasting
   a beacon needs a Pico W (or Linux/BlueZ) — see `pico tests/`.
 
@@ -196,10 +221,11 @@ off-hardware, `read_card()` needs the reader.
 **The serial is big-endian on the card and little-endian in the FD02
 broadcast.** Don't copy one into the other without swapping.
 
-**b2/b7 are NOT on the card.** They differ per card across all 39 cards in
-`card_taps.csv`, and nothing in the pages resembles them — so a tap gets you
-color and serial for free, but the tokens still have to be read off the air
-with `watch_service_data.py`.
+**b2/b7 are not *stored* on the card, but they are computed from it** — a
+CRC-16 of the UID, see above. Nothing in the pages resembles them, and they
+differ per card across all 39 cards in `card_taps.csv`. A tap gets you the
+color, the serial and (via the UID) the tokens, so nothing about a card needs
+reading off the air any more.
 
 Confirmed by dumping **every** page, not just 4–7: pages 8 through 19 are all
 zeros on both cards, and page 16's `000000FF00050000` is identical on the two,
@@ -216,25 +242,22 @@ ORANGE #7569   page 0  041C6EFE 82871F90 8A48FFFF 00000000
 ```
 
 Note page 0 carries the UID *with* its BCC check byte spliced in (`04B1C8`
-**`F5`** `82871F90`), so the seven UID bytes are not contiguous there.
+**`F5`** `82871F90`), so the seven UID bytes are not contiguous there —
+feeding page 0 straight into `card_hash()` gives a wrong answer, and
+`read_card()` is what returns the clean 7 bytes.
 
-The open lead is whether they derive from the card's **RFID UID**, which is
-new information the earlier CRC hunts never had. Two cards now have both:
+The **RFID UID** turned out to be the whole message — information the earlier
+CRC hunts never had. The first two cards to carry both:
 
 | Card | RFID UID | b2 | b7 |
 |---|---|---|---|
 | PURPLE #6055 | `04 B1 C8 82 87 1F 90` | `0xdb` | `0x2c` |
 | ORANGE #7569 | `04 1C 6E 82 87 1F 90` | `0x7d` | `0x81` |
 
-Note the UIDs differ **only at bytes 1–2** — everything else is identical,
-which is a strong hint the tokens are a function of just those two bytes
-plus perhaps the color/serial.
+Both reproduce from the algorithm above.
 
-A CRC-8 sweep over both cards found 54 candidate parameter sets, which is
-**not evidence**: two samples × 8 bits is satisfied by chance by roughly any
-8-bit function. Do not chase any of those without a third and fourth card.
-The cheap next step is harvesting UID + tokens for more cards, and
-`examples/stick_log_cards.py` is the tool for it: installed as `main.py` it
+The 39-card sample that cracked it came from `examples/stick_log_cards.py`:
+installed as `main.py` it
 reads the card over RFID *and* listens for its FD02 beacon at the same time,
 writing one row per card with the UID, color, serial and all twelve bytes.
 Two taps per card — on a controller or color sensor, then on the Stick — and
@@ -242,10 +265,11 @@ it skips cards already in the file. Collect it with
 `examples/mac_fetch_cards.py`; it lands in `card_taps.csv`, **overwriting it
 verbatim** — hand-edits to that file do not survive a fetch.
 
-**Both halves are needed and neither substitutes for the other.** The RFID
-read gives UID + color + serial; only a *sender's* broadcast gives b2/b7. A
-row is written only when both are in hand, so every UID in `card_taps.csv`
-comes with its tokens.
+**That two-tap dance is now only for evidence, not for use.** It exists
+because the logger records the *observed* b2/b7 from a sender's broadcast
+rather than computing them — which is the point, since a computed value would
+make the file useless for checking the algorithm. To simply drive a motor,
+one tap on the RFID reader is enough.
 
 Both pairs above were confirmed identical when read from a color sensor and
 a controller carrying the same card, which is what "per card, not per
@@ -268,14 +292,17 @@ made it expensive.
 
 ## Ruled out — don't retry these
 
+These are all about the **color and serial** as the message. The answer uses
+the RFID UID instead, so none of them was ever going to hit.
+
 | Hypothesis | How it died |
 |---|---|
 | b2/b7 = CRC-8 of the card fields | brute force over all 256 polys × 256 inits × reflections × xorout, several input selections, 20 cards → 0 hits |
-| b2/b7 = halves of a CRC-16 | all 65536 polynomials × inits × reflections × input orders × both byte orders, 20 cards → 0 hits |
+| b2/b7 = halves of a CRC-16 of the card fields | all 65536 polynomials × inits × reflections × input orders × both byte orders, 20 cards → 0 hits. The real answer *is* a CRC-16 of this shape (poly `0x0001`, reflected, init 0, big-endian out) — over the UID, which this sweep never fed it |
 | b2/b7 = sequential ID extension | adjacent serials scramble both bytes (BLUE#1001 `d6`/`12` vs BLUE#1003 `c3`/`c9`) |
 | b2 & 0xc0 is a constant marker | held for 6 cards, broke on 20 — retracted |
-| b2 or b7 = the symbol printed on the card | the symbol maps 1:1 to the color, and the 8 purple cards in `card_taps.csv` — one symbol between them — carry 8 distinct b2 and 6 distinct b7. A byte that varies within a symbol is not encoding it. The symbol is also already on the air as b1. |
-| b7 = a shared card *design* (the same-color b7 collisions) | proposed when 3 of 5 b7 collisions turned out to be same-color, against 0.3 expected. Killed by the line above: with symbol ↔ color there is no shared design for them to mark, so those collisions are what the null predicted. Noted because the clustering is real and will look meaningful again on the next sample. |
+| b2 or b7 = the symbol printed on the card | every card of one color shares one symbol, yet the 8 purple cards in `card_taps.csv` carry 8 distinct b2 and 6 distinct b7. A byte that varies within a symbol is not encoding it. The symbol is also already implied by b1. |
+| b7 = a shared card *design* (the same-color b7 collisions) | proposed when 3 of 5 b7 collisions turned out to be same-color, against 0.3 expected. Now fully settled by the hash: b7 is the low byte of a CRC-16 of the UID, so collisions are birthday collisions and mark nothing. Noted because the clustering is real and will look meaningful again on the next sample. |
 | b8 = reflection / brightness | it holds and dithers ±1 regardless of brightness |
 | b8 = uptime counter | it oscillates in place and has risen as well as fallen |
 | byte 0 = message type | it's the device type; a capture locked to one address sees it constant |
@@ -288,8 +315,9 @@ no UIDs) has been deleted — `card_taps.csv` superseded 15 of its 16, and the
 odd one out, PURPLE #1126, was judged not worth keeping a file for. It is
 still in git: `git show 2d9c572:card_mode/cards.csv`.
 
-`card_taps.csv` is the one to attack the hash with — it is the only file
-pairing a card's UID with its tokens. It cross-checked clean against
+`card_taps.csv` is what the hash was cracked with, and is still the file to
+re-check it against (`python card_hash.py --verify`) — it is the only one
+pairing a card's UID with its observed tokens. It cross-checked clean against
 `cards.csv` before that file went: all 15 shared cards agreed on b2 and b7
 exactly, captured months apart with a different tool, and **eleven of those
 15 were read on the other device type**, proving b2/b7 do not depend on byte
@@ -297,21 +325,16 @@ exactly, captured months apart with a different tool, and **eleven of those
 on data it was not derived from (`b5` = `0xff` or a detected color for the
 sensor, stick position for the controller; `b6` always `0`).
 
-**b2 looks like a hash, not a field.** 34 distinct values across 39 cards,
-spread 4..251 over 14 of the 16 high nibbles, with 5 collisions where
-random 8-bit values predict 2.8. Anything proposing it is a small
-enumeration has to explain that spread first.
+**b2 looks like a hash, not a field** — 34 distinct values across 39 cards,
+spread 4..251 over 14 of the 16 high nibbles, with 5 collisions where random
+8-bit values predict 2.8. That read was right: it is half of one.
 
 ## Open questions
 
-1. **The b2/b7 hash algorithm.** Settled negatives, don't re-test: it is
-   not *any* GF(2)-affine function of color+serial (so no CRC of any
-   parameters, no XOR/parity digest), not additively separable in color and
-   serial (so no sum/Fletcher-style checksum), and not a function of the
-   device type. Only a per-card input we can't see — the RFID UID is the
-   candidate — could still make it a checksum; deciding that needs about
-   **90 UID-bearing cards**, versus 39 today. Until it's cracked, spoofing
-   requires harvesting the real bytes off a device carrying the card.
+1. ~~**The b2/b7 hash algorithm.**~~ **Solved** — CRC-16 of the RFID UID,
+   39/39 cards, see above. The note here predicted it would take ~90
+   UID-bearing cards; it took 39 and a different guess at the message.
+   Spoofing no longer needs a card harvested off the air.
 2. **Byte 8.** Slowly varying, dithers ±1, has both risen and fallen. It
    is either the slow tail of the 8–11 counter block or a genuine analog
    value (battery and temperature both fit). The two documents disagreed
@@ -365,6 +388,7 @@ enumeration has to explain that spread first.
 | `watch_service_data.py` | lock onto one card, log every byte change with the full payload |
 | `verify_colors.py` | prompt through all 11 colors, verify byte 5 against the firmware table |
 | `log_cards.py` | tap-through card logger, keyed on (color, serial) |
+| `card_hash.py` | b2/b7 from a card's RFID UID; `--verify` re-checks all 39 logged cards |
 | `examples/stick_log_cards.py` | runs on the Stick as `main.py`: RFID UID + all 12 FD02 bytes per card, to `card_taps.csv` on the board |
 | `examples/mac_fetch_cards.py` | installs that logger, and fetches what it collected |
 | `capture_controller.py` | guided capture protocol for the controller |
@@ -408,9 +432,15 @@ superseded nibble-interleaved ±48 signed-8 stick encoding, which
 `FIXED_78 = b'\x48\x80'` copied from one real controller, so they only
 drive motors carrying *that* card; `AUTO_ADOPT` harvests color and serial
 but not the tokens, so it will silently produce beacons the motor ignores.
-`picolib.Card` takes the tokens explicitly for this reason.
+`picolib.Card` takes the tokens explicitly for this reason — feed it
+`lego_card.card_hash(uid)` and any card works.
 
-**Reading b2/b7 needs a sender, not the motor.** The tokens appear in the
-FD02 service data of a controller or color sensor carrying the card —
+**Computing b2/b7 beats reading them.** `card_hash.py` /
+`lego_card.card_hash()` derive them from the card's RFID UID, so the card
+itself is the only thing needed.
+
+To *read* them off the air instead — which is how you check the algorithm on
+a new card — you need a **sender**, not the motor. They appear in the FD02
+service data of a controller or color sensor carrying the card, and
 `watch_service_data.py` shows them. A motor's own advertisement uses the
 manufacturer-data layout, which carries only color and serial.

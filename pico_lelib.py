@@ -579,10 +579,12 @@ check_board = check_pico
 def find_card(card_serial, card_color=None, timeout=TOKEN_SCAN_TIMEOUT):
     '''Listen for a card and return (card_color, b2, b7).
 
-    A motor validates bytes 2 and 7 of the beacon. They are a per-card token
-    that cannot be computed from the color and serial, so they have to be
-    read off a device already carrying the card. This is the one part of the
-    job the Mac is better at than the board, since it can already listen.
+    A motor validates bytes 2 and 7 of the beacon. They cannot be computed
+    from the color and serial -- they are a CRC-16 of the card's RFID UID
+    (card_mode/card_hash.py) -- so without the physical card in a reader they
+    have to be read off a device already carrying it. That is what this does,
+    and it is the one part of the job the Mac is better at than the board,
+    since it can already listen. Given a UID instead, skip this and compute.
 
     The tokens are only in a *sender's* broadcast, so a controller or color
     sensor tapped with this card must be switched on and nearby. A motor's own

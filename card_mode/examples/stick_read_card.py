@@ -19,8 +19,9 @@ The color and serial are read straight off the card. From a purple #6055:
                         +-------- 0x02 = firmware PURPLE
 
 The raw pages behind that decode are printed to the console too, in case you
-want to see them. What is NOT on the card is the b2/b7 tokens a motor
-validates -- see stick_tap_to_drive.py for where those come from.
+want to see them. The b2/b7 bytes a motor validates are not stored on the
+card, but they are a CRC-16 of its UID, so lego_card.card_hash(uid) computes
+them from the same tap -- see stick_tap_to_drive.py for that in use.
 '''
 
 from time import sleep_ms
