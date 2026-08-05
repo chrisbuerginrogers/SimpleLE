@@ -13,10 +13,89 @@ A thin Python wrapper around the [`legoeducation`](https://pypi.org/project/lego
 
 All four classes share the same connection behavior: up to 5 retries with a 1-second delay between attempts, raising `ConnectionError` on final failure.
 
+## Functions
+
+These work off a card rather than a connected object:
+
+| Function | Purpose |
+|---|---|
+| `find_cards()` | List every card broadcasting nearby — run this first |
+| `read_sensor(card_serial, card_color=None)` | Read everything broadcasting under one card — **without connecting to it** |
+| `set_speed(card_serial, speed, card_color=None)` | Set the speed of whichever motor holds that card, rounded to seven steps |
+
+```python
+import lelib
+import legoeducation as le
+
+lelib.find_cards()
+# [{'color': 6, 'serial': 6055, 'device': 'color sensor'},
+#  {'color': 6, 'serial': 6055, 'device': 'controller'}]
+
+lelib.read_sensor(6055, le.LEGO_COLOR_PURPLE)
+# {'color': 2, 'controller': (0, 0)}    color 2 = Yellow, both sticks centered
+
+lelib.set_speed(6055, 45, le.LEGO_COLOR_PURPLE)   # 45 rounds to 33
+# 33
+```
+
+If `read_sensor()` comes back empty, `find_cards()` is the answer — an empty
+read is nearly always a card number matching nothing on the air.
+
+`read_sensor()` listens to the advertisement every device broadcasts anyway, so
+it needs no pairing and doesn't use up a device's single connection slot — you
+can watch a controller while a motor is being driven by it. A card names a
+group, so one call can report a color sensor and a controller together.
+
+Serials are allocated per color, so `1126` alone can match a red card *and* a
+blue one. Pass `card_color` whenever you can.
+
+## Driving motors with no connection
+
+`pico_lelib.py` gives you the same syntax as lelib, but drives motors by
+**broadcast** — no pairing and no connection to the motor at all. macOS cannot
+transmit a BLE advertisement, so the broadcast comes from a MicroPython board
+(ESP32 or Pico W) on the end of a USB cable; your code still runs on the Mac.
+
+```python
+import pico_lelib
+pico_lelib.install()      # copy the board libraries over, once
+pico_lelib.check_pico()   # "no board" / "not running the server" / "ready"
+
+motor = pico_lelib.doubleMotor()
+motor.connect(6055, card_color=le.LEGO_COLOR_PURPLE)
+motor.set_speed(70)       # rounds to 67
+motor.run()
+motor.tank(100, -100)     # spin on the spot
+motor.stop()
+```
+
+It carries only what the broadcast can express: two joystick positions with
+seven steps each. `spin()`, `turn_left()` and `move_steps()` need the motor to
+report back, which a broadcast cannot do, so they are absent rather than faked
+— use `lelib` for those. Requires `pip install pyserial`.
+
+Verified end to end on an ESP32-S3 running MicroPython; a Pico W uses the same
+API.
+
+## Reading the cards themselves
+
+The connection cards are NTAG/Ultralight tags, and they carry their color and
+serial in the clear behind an ASCII `L3G0` marker. With an RFID reader on the
+board you can tap a card and have the code work out which motor to talk to —
+see [card_mode/examples/](card_mode/examples/).
+
+## Examples and the protocol
+
+- [card_mode/examples/](card_mode/examples/) — small single-purpose programs,
+  split into `mac_*.py` (run on your Mac) and `stick_*.py` (run on the board)
+- [card_mode/](card_mode/) — how the broadcast protocol was reverse-engineered,
+  and the tools that did it
+
 ## Installation
 
 ```bash
 pip install legoeducation matplotlib
+pip install pyserial          # only for pico_lelib.py, which talks to a board
 ```
 
 Then copy `lelib.py` into your project.

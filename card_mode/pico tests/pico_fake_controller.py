@@ -9,11 +9,11 @@ Double) Motor drives itself — NO GATT connection, NO real controller, NO hub.
 Why the Pico and not the Mac: macOS/bleak can only scan & connect, never
 transmit custom advertisements. Brick-to-brick control here is connectionless
 BLE *broadcast*: every device tapped with the same card is one group, keyed by
-the card's colour + serial. Controllers broadcast their stick state; motors
+the card's color + serial. Controllers broadcast their stick state; motors
 listen and act, combining/averaging all senders they hear.
 
 ── Auto-adopt ──────────────────────────────────────────────────────────
-You don't need the physical card. A motor announces its own colour+serial in
+You don't need the physical card. A motor announces its own color+serial in
 its manufacturer-data advertisement, so with AUTO_ADOPT the Pico first SCANS
 for the nearest motor, reads its card, and then broadcasts a matching beacon.
 Set AUTO_ADOPT = False to force the manual CARD_COLOR / CARD_SERIAL below
@@ -26,7 +26,7 @@ Set AUTO_ADOPT = False to force the manual CARD_COLOR / CARD_SERIAL below
     |   |   |  (le16)  (see     per-     advancing so packets look "fresh")
     |   |   |          below)   ctrlr
     |   |   byte 2: unknown constant, copied from a real controller
-    |   card colour (0x02 = purple)
+    |   card color (0x02 = purple)
     byte 0: message/type tag, constant 0x03
 
 Two joysticks are nibble-INTERLEAVED across bytes 5 & 6, each a signed 8-bit
@@ -42,15 +42,15 @@ import bluetooth
 import time
 from micropython import const
 
-# ── behaviour ─────────────────────────────────────────────────────────
-AUTO_ADOPT = False         # scan for a motor and copy its card colour+serial
+# ── behavior ─────────────────────────────────────────────────────────
+AUTO_ADOPT = False         # scan for a motor and copy its card color+serial
 SCAN_MS = 4000             # how long to scan for a motor before giving up
 
 # Manual card — used when AUTO_ADOPT is False (the reliable, known-good path).
 # Set these to YOUR motor's card. Read them off the Mac: run
 # scan_advertising.py and look at the motor's "LEGO Card" column, e.g.
 # "Purple#1126" -> CARD_COLOR = 0x02 (purple), CARD_SERIAL = 1126.
-CARD_COLOR = 0x02          # 0x02 = purple (legoeducation colour map)
+CARD_COLOR = 0x02          # 0x02 = purple (legoeducation color map)
 CARD_SERIAL = 1126
 
 # Drive: hold fixed stick values, or (both None) sweep both sticks together
@@ -176,7 +176,7 @@ def main():
         found = scan_for_motor(ble, SCAN_MS)
         if found:
             color, serial, product = found
-            print("Adopted motor card: colour 0x{:02x} serial {} (product {})".format(
+            print("Adopted motor card: color 0x{:02x} serial {} (product {})".format(
                 color, serial, product))
         else:
             print("No motor found — falling back to manual card 0x{:02x}#{}".format(
