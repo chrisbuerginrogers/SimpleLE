@@ -648,15 +648,27 @@ class _BroadcastMotor(object):
         self.speed = 100
         self._link = None
 
-    def connect(self, card_serial, card_color=None):
+    def connect(self, card_serial, card_color=None, b2=None, b7=None):
         '''Point the board at the motor holding this card.
 
         Nothing is connected in the Bluetooth sense -- the motor is never
-        paired with. This reads the card's tokens off the air, hands them to
-        the board, and checks the board is ready.
+        paired with. By default this reads the card's tokens off the air,
+        which needs a controller or color sensor carrying the same card
+        switched on and nearby -- not the motor, which never advertises at
+        all. Pass b2/b7 directly (from card_mode/card_hash.py given the
+        card's RFID UID, or a card_taps.csv row) to skip that scan entirely;
+        card_color is then required too, since it can't be read off the air
+        alongside them.
         '''
         link = get_link()
-        color, b2, b7 = find_card(card_serial, card_color)
+        if b2 is not None and b7 is not None:
+            if card_color is None:
+                raise ValueError(
+                    'card_color is required when b2/b7 are given directly -- '
+                    'it cannot be read off the air without a scan.')
+            color = card_color
+        else:
+            color, b2, b7 = find_card(card_serial, card_color)
         link.command('card', color=color, serial=card_serial, b2=b2, b7=b7)
         self._link = link
         self.card_serial = card_serial
@@ -716,6 +728,24 @@ class doubleMotor(_BroadcastMotor):
         '''
         link = self._require_connection()
         reply = link.command('tank', left=round_speed(left), right=round_speed(right))
+        return reply['left'], reply['right']
+
+    def tank_v04(self, left, right):
+        '''Direct per-wheel speed, continuous rather than the 7 steps tank()
+        rounds to. Confirmed live 2026-08-08 against a real Double Motor:
+        reproducible in both directions across repeated trials in one
+        connection. See card_mode/Card_mode.md, "A second device type,
+        byte0 = 0x04: confirmed" for the trial log -- including one spurious
+        no-movement result caused by reconnecting right after a board reboot,
+        not the protocol; reconnect fresh and retest if this looks flaky.
+
+        Returns the (left, right) percentages actually sent, clamped to
+        -100..100.
+        '''
+        link = self._require_connection()
+        left = max(-100, min(100, left))
+        right = max(-100, min(100, right))
+        reply = link.command('tank_v04', left=left, right=right)
         return reply['left'], reply['right']
 
     def run_left(self, speed=None):

@@ -59,6 +59,7 @@ text quietly lose most of its capitals, which is how that bug hid before.
 | Example | What it does |
 |---|---|
 | `mac_drive_known_card.py` | Same as the Stick version, but written on the Mac in lelib syntax and sent over USB to the Stick. |
+| `mac_drive_arrow_keys.py` | Live tank-drive with the arrow keys -- hold Up/Down/Left/Right (or two at once to curve), release to stop. |
 | `mac_run_on_stick.py` | Runs any `stick_*.py` **on the Stick** from here, with its `print()` output coming back to your terminal. Ctrl-C stops it on the board too. |
 | `mac_watch_card.py` | Watches everything broadcasting under one card — color sensor readings and joystick positions, live. No Stick needed. |
 | `mac_fetch_cards.py` | `--install` puts `stick_log_cards.py` on the Stick as `main.py`; with no arguments it copies the logged cards back to `../card_taps.csv`. |

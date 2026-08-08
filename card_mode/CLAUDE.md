@@ -355,6 +355,16 @@ spread 4..251 over 14 of the 16 high nibbles, with 5 collisions where random
 4. **Is byte 1 (color) validated for group membership**, or does the
    serial alone suffice? Untested — the b2/b7 check may make it moot.
 5. **Exact byte order and rate of the 8–11 counter.**
+6. ~~**A second device-type tag, `byte0 = 0x04`, claimed for "double motor
+   drive."**~~ **Confirmed**, live, 2026-08-08 — an external writeup
+   ([fantasticalWands `MOTOR_BROADCAST_RECIPE.md`](https://github.com/milandahal213/fantasticalWands/blob/main/MOTOR_BROADCAST_RECIPE.md))
+   turned out right: `b5`/`b6` are a direct signed-8 per-wheel speed,
+   continuous rather than `0x03`'s 7-state low nibble. This rig's wheels are
+   mounted mirror-image, so `picolib.Motor.set_tank_v04` negates the right
+   wheel to get ordinary tank() semantics. One reconnect-after-reboot trial
+   gave a false negative (no movement) that didn't reproduce in a stable
+   connection — see Card_mode.md, "A second device type, byte0 = 0x04:
+   confirmed" for the full trial log before doubting a result.
 
 ## Conventions
 
@@ -432,7 +442,11 @@ does not write `main.py`, so a shared board keeps its normal behavior.
 The experiment scripts alongside it are what established the protocol:
 `pico_fake_controller.py` (first working spoof), `pico_nibble_sweep.py` /
 `pico_raw_sweep.py` (which byte values the motor honors),
-`pico_hash_test.py` and `pico_byte7_switch.py` (b2/b7 validation).
+`pico_hash_test.py` and `pico_byte7_switch.py` (b2/b7 validation), and
+`pico_type04_sweep.py`, which raised the external-recipe lead on `byte0 =
+0x04` that's now confirmed (see above) — `picolib.Motor.set_tank_v04` /
+`pico_lelib.doubleMotor.tank_v04` are the supported way to drive it, not
+this sweep script.
 
 **Two stale things in those scripts** — they are lab notebooks, not
 current API. `pico_fake_controller.py`'s docstring still describes the

@@ -872,6 +872,49 @@ docstring on `decode_controller_axes()` in
 
 ---
 
+## A second device type, `byte0 = 0x04`: confirmed
+
+An external writeup on the same protocol —
+[fantasticalWands `MOTOR_BROADCAST_RECIPE.md`](https://github.com/milandahal213/fantasticalWands/blob/main/MOTOR_BROADCAST_RECIPE.md)
+— independently documents the same 12-byte FD02 layout, the same CRC-16 of
+the RFID UID for b2/b7 (identical polynomial, reflection and init to
+`card_hash.py`), and the same gotchas (hash required, counter must advance,
+group = color + serial). None of that is new; it corroborates everything
+above.
+
+The one thing it claimed that we hadn't seen: a device-type tag `0x04`,
+described as "double motor drive," where `b5`/`b6` encode a direct signed-8
+per-wheel speed (`0x00` stop, `0x01..0x7f` forward, `0x80..0xff` reverse)
+rather than the controller's 7-state low-nibble encoding used for `0x03`.
+The source hedged it itself ("verify against your motor"), and it's absent
+from all 39 cards' worth of captures here — but it's now been driven live
+against a real Double Motor (PURPLE #6055), and it works.
+
+**Confirmed 2026-08-08, on an ESP32-S3 via `pico_lelib`/`picolib.py`:**
+
+- `tank_v04(+50, +50)` circled instead of driving straight — the first
+  signal this rig's wheels are mounted mirror-image, the case
+  `MOTOR_BROADCAST_RECIPE.md` calls out ("negate one wheel if the motors
+  are mounted mirror-image").
+- Negating the right wheel's value before encoding (`picolib.Motor.
+  set_tank_v04`) fixed it: with the flip, equal left/right inputs drive
+  straight and opposite-sign inputs turn — the ordinary tank() convention.
+- **One false negative along the way, isolated and explained rather than
+  papered over:** immediately after reinstalling the board files and
+  triggering a soft reset, the very next command (wire bytes that had just
+  driven straight forward) produced no movement at all, twice in a row on
+  reconnect. Repeating the *same* wire bytes moments later, in one
+  continuous connection with no reconnect or reboot in between, reproduced
+  cleanly in both directions across two trials each. The reboot-adjacent
+  reconnect was the confound, not the protocol — **retest in a stable
+  connection before concluding a `0x04` result is flaky.**
+- `pico tests/pico_type04_sweep.py` remains for anyone who wants to sweep
+  the full byte range on their own hardware; `picolib.Motor.set_tank_v04`
+  / `pico_lelib.doubleMotor.tank_v04` are the confirmed, documented way to
+  drive it.
+
+---
+
 ## Running it
 
 ```bash

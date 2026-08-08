@@ -10,6 +10,7 @@ object per line in each direction:
     {"cmd": "card", "color": 6, "serial": 1126, "b2": 243, "b7": 72}
     {"cmd": "run", "speed": 45}              -> {"ok": true, "speed": 33}
     {"cmd": "tank", "left": 100, "right": 0} -> {"ok": true, "left": 100, "right": 0}
+    {"cmd": "tank_v04", "left": 100, "right": 0}  -- continuous speed, see picolib.py
     {"cmd": "run_time", "speed": 50, "seconds": 2}
     {"cmd": "stop"}
     {"cmd": "status"}
@@ -70,6 +71,13 @@ class Server(object):
     def do_tank(self, msg):
         motor = self._require_card()
         left, right = motor.set_tank(msg['left'], msg['right'])
+        self.broadcasting = True
+        return {'left': left, 'right': right}
+
+    def do_tank_v04(self, msg):
+        '''Continuous per-wheel speed under device type 0x04 -- see picolib.Motor.set_tank_v04.'''
+        motor = self._require_card()
+        left, right = motor.set_tank_v04(msg['left'], msg['right'])
         self.broadcasting = True
         return {'left': left, 'right': right}
 
